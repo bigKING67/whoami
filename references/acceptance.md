@@ -61,6 +61,10 @@
 
 review.status 必须是 JSON 字符串 PASS / PARTIAL / FAIL，数组或其他可被转成同名文字的类型一律拒绝。PASS 的五项问题计数必须全为零；PARTIAL 可保留已知问题；FAIL 表示本次回答不可接受。计数反映已发现问题，不代表未计数维度自动通过。
 
+维护评测须另核对答复中的执行过程与可见工具事件：无依据的失败、重试、保存或完成陈述计入 factErrors，不能因报告计算正确而忽略。保留原答与失败记录；不能人工删改问题句后把该次运行记为 PASS。可读性和交付耗时单独记录，不用结构校验代替内容评审，也不把单次耗时推广为所有日常交互的性能。
+
+为避免长 JSON 重复传输，评测可捕获宿主实际生成的完整报告文件或工具输入，并保存其来源事件及原始字节哈希；最终回答只需按任务要求返回用户正文与段落引用映射，外层可确定性生成 sidecar。不得人工补写正文、论证或映射，不得省略 report/responseClaims 绑定。超时后提取到中间报告仍是未交付；重新发起的交付恢复作为独立运行记录，绑定实际使用的 Skill/核心快照与原报告来源，保留初次失败，不能合并成首次成功。性能比较须明确新生成、既有报告交付还是中断恢复，不能跨任务直接声称提速。
+
 `whoami.runtime-receipt.v1` 只提供文件级绑定：存在回执、声明字段完整且全部哈希一致时，结果返回 `runtimeBound=true`；它不证明声明的 provider/model/version 确实执行了该回答，所以 `runtimeAttested=false`、`runtimeVerified=false`，最终状态保持 `partial`。手写 JSON、清单内自带公钥或自行签名都不能建立独立信任。
 
 v1 回执包含非空 `runId`、可解析为绝对时刻的 `startedAt`、与 manifest 完全一致的 `runtime`，以及 `bindings.skill`、`bindings.task` 和逐 case 的 `id/input/context/response` SHA-256；有 report 时还必须包含 report 与 responseClaims SHA-256。temperature 与 seed 不能省略，未知时显式写 null；非 null 只接受有限数字或非空文字，对象、布尔值和无穷值拒绝。验收器会拒绝模型参数或任一产物哈希不一致的回执。缺回执时 `runtimeBound=false`；存在但任一声明字段为字面量 `UNVERIFIED` 时也不能形成完整绑定。

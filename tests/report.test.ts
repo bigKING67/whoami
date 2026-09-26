@@ -2250,3 +2250,62 @@ test("纯八字报告不引入紫微自动复核，纯紫微仍保留四化复�
  const z=asZiweiOnly(valid());
  const md=renderReport(z,e);assert(md.includes('四化分层核对'));assert(!md.includes('核心规则复核'));
 });
+
+test("完整报告保留真实资料与限制性说明，不能借此夹带月份预测", () => {
+  const texts = [
+    "目前不能判断近期是否会升职。",
+    "出生日期是2000年8月16日。",
+    "不能据此承诺事件或安排月份。出生日期为2000-08-16，历法为公历。",
+    "出生日期为2000-08-16，无法预测下个月是否升职。",
+    "你在2025年3月换过工作，这是用户提供的经历，尚未独立核验。",
+  ];
+  for (const text of texts) {
+    const r = valid();
+    r.sections[0].claims[0].text += `\n${text}`;
+    const checked = validateReport(r, e);
+    assert.ok(renderReport(checked, e).includes(text));
+  }
+  for (const text of [
+    "出生日期是2000年8月17日。",
+    "出生日期为2000-08-16，历法为农历。",
+    "出生日期为2000-08-16，历法为公历，下个月会升职。",
+    "出生日期为2000-08-16，无法预测下个月是否升职，下个月会升职。",
+    "目前不能判断近期是否会升职，但是下个月会升职。",
+    "不能判断近期是否升职且下个月适合跳槽。",
+    "不能判断近期是否升职：下个月适合跳槽。",
+    "用户称2025年3月已换工作，下个月升职，未经独立核验。",
+    "用户称2025年3月已换工作、短期内升职，未经独立核验。",
+    "用户称2025年3月已换工作/过段时间升职，未经独立核验。",
+    "你在2025年3月换过工作，这是用户提供的经历，尚未独立核验。近期会再次升职。",
+  ]) {
+    const r = valid();
+    r.sections[0].claims[0].text += `\n${text}`;
+    assert.throws(() => validateReport(r, e), InputError);
+  }
+});
+
+
+test("农历出生完整报告保留两种日期格式并拒绝无关非法日期", () => {
+  const evidence = contextFor({ ...input, calendar: "lunar", date: "2024-02-30", leapMonth: false }, [2026]);
+  for (const text of ["出生日期为农历2024-02-30。", "出生日期为农历2024年02月30日。"]) {
+    const r = valid(evidence);
+    r.sections[0].claims[0].text += `\n${text}`;
+    assert.ok(renderReport(validateReport(r, evidence), evidence).includes(text));
+  }
+  const r = valid(evidence);
+  r.sections[0].claims[0].text += "无法预测出生日期2027年2月30日是否升职。";
+  assert.throws(() => validateReport(r, evidence), (e: unknown) => e instanceof InputError && e.code === "INVALID_NUMERIC_DATE");
+});
+
+test("报告与渲染接受完整 ISO 资料钟点，拒绝其中非法秒数", () => {
+  const report = valid();
+  report.uncertainty += "来源记录时刻：1991-10-17T06:58:00+08:00[Asia/Shanghai]。";
+  assert.doesNotThrow(() => validateReport(report, e));
+  assert.match(renderReport(report, e), /1991-10-17T06:58:00\+08:00/);
+  const original = report.uncertainty;
+  for (const clock of ["06:58:60", "06:60:0", "25:58:0", "06:60:000"]) {
+    report.uncertainty = original.replace("06:58:00", clock);
+    assert.throws(() => validateReport(report, e), (error: unknown) =>
+      error instanceof InputError && error.code === "INVALID_CLOCK_TIME");
+  }
+});

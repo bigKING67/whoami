@@ -8,7 +8,7 @@
 
 - `validIsoDate(value)`：验证 v6 `timeReference.asOfDate` 是否为真实的 `YYYY-MM-DD` 公历日期。
 - `referencedRelativeYears(text, referenceYear)`：把“今年/本年/明年/后年/去年/前年”解析为去重、升序的公历年份；没有冻结基准时返回空数组，由报告 schema 兼容逻辑决定后续错误。
-- `validateReportTemporalText(text, label, evidenceYears, referenceYear)`：按本文件顺序检查一段最终可见文本；成功时原样返回 text，失败时抛出带稳定 `code` 的 `InputError`。
+- `validateReportTemporalText(text, label, evidenceYears, referenceYear, context?)`：按本文件顺序检查一段最终可见文本；成功时原样返回 text，失败时抛出带稳定 `code` 的 `InputError`。可选 context 由报告层传入字段 role（prose/title/reality-source）、冻结 asOfDate 与已校验 birth 输入；省略时保持严格行为，label 只用于报错，不授予例外。
 
 `report.ts` 不自行维护另一套日期、时区、DST、区间或重复日程解析逻辑。新增时间规则时先明确所属阶段、错误优先级、资料性例外和 evidence 要求，再同步实现、边界测试与本文件；不能只加正则或只改提示文案。
 
@@ -30,13 +30,15 @@ v6 报告以 `timeReference: {"asOfDate":"YYYY-MM-DD","timeZone":"IANA 时区"}`
 
 当前 context/evidence 只提供年度层，没有流月、流日或精确节气事件链。“上半年/下半年/年初/年中/年底/年末”、季度、这个月/下个月/月初/月末、本周/下周，以及“三个月内/未来十天”等细分时间返回 `UNSUPPORTED_TIME_GRANULARITY`。宿主须退回“2027 年度主题”等明确年度表达，或先接入与报告合同一致的细粒度 evidence；不能从年度四化、大限或主题宫生成月份、星期、日期或事件窗口。“月份资料尚未提供”“流月与流日未计算”等边界说明继续允许。
 
-“2027 年 3 月、3 月 15 日、三月十五日、周一、星期五”等 evidence 年份内或没有年份的绝对月日星期同样返回 `UNSUPPORTED_TIME_GRANULARITY`。早于冻结报告年份且不在 `evidence.years` 的历史年月只在报告标题与 `timingChain.realityBasis.source` 中允许，用于出生资料或来源说明；放在 claim、论证或建议中仍会拒绝，也不因此获得现实事件证明。“明年春节、2027 年立春、立春当天、清明那天”等命名历法点返回 `UNSUPPORTED_CALENDAR_POINT`，须先明确对应公历日期、历法与时区口径，再接入日级 evidence。裸的“八字年度边界按立春、紫微按农历新年”只说明体系口径，继续允许。
+“2027 年 3 月、3 月 15 日、三月十五日、周一、星期五”等 evidence 年份内或没有年份的绝对月日星期同样返回 `UNSUPPORTED_TIME_GRANULARITY`。早于冻结报告年份且不在 `evidence.years` 的历史年月可在 title/reality-source 角色下作为非预测性来源说明；八字与紫微来源字段使用相同角色。正文中的出生日期和有归属的历史转述须满足下述窄例外，也不因此获得现实事件证明。“明年春节、2027 年立春、立春当天、清明那天”等命名历法点返回 `UNSUPPORTED_CALENDAR_POINT`，须先明确对应公历日期、历法与时区口径，再接入日级 evidence。裸的“八字年度边界按立春、紫微按农历新年”只说明体系口径，继续允许。
 
 “2027-03-15、2027/03/15、2027.3.15、3.15、03/15、3-15”等数字日期在升职、结果、行动、联系、面试、签约或窗口等判断语境中也返回 `UNSUPPORTED_TIME_GRANULARITY`。“今晚、明早、明天上午、上午九点、下午 3:30、09:30”等相对日内时点或钟点用于事件判断时返回 `UNSUPPORTED_TIME_OF_DAY`；宿主须先明确当地日期与 IANA 时区，再接入日级和小时级 evidence。年度四化、大限或主题宫不能生成钟点建议。
 
 ## 日期、钟点、IANA 与绝对时刻
 
 时间输入的合法性和唯一性先于 evidence 粒度检查。带年份的数字日期会核对同一种分隔符和真实公历日；`2027-02-29`、`2027-13-01`、`2027-04-31` 或 `2027-03/15` 返回 `INVALID_NUMERIC_DATE`。没有年份且用于判断的 `03/04`、`11-12` 若月日两种顺序都成立，返回 `AMBIGUOUS_NUMERIC_DATE` 并要求改为 `YYYY-MM-DD`；两种顺序都不成立则返回 `INVALID_NUMERIC_DATE`。`24:30`、`09:60` 或秒数超过 59 返回 `INVALID_CLOCK_TIME`。`CST/EST/PST/IST` 与“北京时间、美东时间”等缩写或口语标签不能唯一、可复算地绑定规则，返回 `AMBIGUOUS_TIME_ZONE` 并要求明确 IANA 时区。
+
+钟点按完整时分秒识别，包括 ISO 日期后的 `T`/`t`，不能从 `06:58:00` 中重新取出 `58:00` 当作钟点。合法秒值不因此误拒；秒整数部分须为两位，格式错误或非法时、分、秒仍返回 INVALID_CLOCK_TIME；合法钟点不获得事件预测例外。
 
 明确的 `YYYY-MM-DD HH:mm[:ss] Area/Location` 当地时刻按 IANA 时区规则检查 DST。跳时缺口中的钟点返回 `NONEXISTENT_LOCAL_TIME`；`earlier` 或 `later` 不能把缺失时间顺延成真实时刻。回拨重复小时若没有分支返回 `AMBIGUOUS_LOCAL_TIME`，要求明确 `earlier` 或 `later`；选定分支只消除绝对时刻歧义，随后仍须通过日级、小时级 evidence 门禁。无法识别的地区时区返回 `INVALID_TIMEZONE`。这一检查复用出生时间的 Temporal 分类，不用固定 UTC offset 替代地区时区规则。
 
@@ -57,3 +59,12 @@ v6 报告以 `timeReference: {"asOfDate":"YYYY-MM-DD","timeZone":"IANA 时区"}`
 “近期、不久、很快、过阵子、什么时候、短期内、未来一段时间”等表达没有可复算年份或起止范围，返回 `AMBIGUOUS_TIME_HORIZON`。宿主须先让用户选择明确的 YYYY 年度主题或明确日期范围；不能自行换算成几周、几个月、某个季度或最佳窗口。若用户选择的范围细于当前年度 evidence，仍须停止，直至对应粒度 evidence 已经计算并进入报告合同。
 
 “未来三年、三年内、接下来五年、这几年、近几年、长期”等多年范围没有唯一首尾年份或是否包含当前年的约定，返回 `AMBIGUOUS_YEAR_RANGE`。宿主须先改写为升序的 `YYYY—YYYY 年度`闭区间。明确闭区间会逐年检查；任一年不在同一 input 的 `evidence.years` 时返回 `TIME_RANGE_OUT_OF_SCOPE`，必须补算后再生成报告。含紫微事实的正文还须以同候选 `ziwei-timing` 和 `timingChain.years` 覆盖区间全部年份。大限既有起止标签不是用户选择的年度分析范围，不因本条要求为整个大限补算逐年 evidence。
+
+## 资料复述与限制性说明的窄例外
+
+报告层提供 context 时，以下语句可免于对应的时间粒度或模糊范围拒绝；日期合法性、DST、时区、区间、年份绑定、前提与危险断言检查仍独立执行。例外不验证自由文本的全部语义。
+
+- 按有限完整句型识别的“不能/无法/尚不能判断、预测、确定、断言”限制句可以提到“近期、下个月、什么时候”。作用域止于局部语句；逗号、句号和转折后的新预测照常检查。“不能保证”不构成例外，不允许用免责声明夹带肯定预测。
+- 独立分句中的“出生日期是/为……”须与当前输入的日期、历法及闰月完全一致。默认公历；农历须显式写农历与闰月。明确日期不一致返回 FACT_MISMATCH；未识别的表达不自动放行。可以用逗号连接一致的“历法为公历/农历”说明；相反历法返回 FACT_MISMATCH，邻接的事件预测仍单独拒绝。精确匹配的农历出生范围按输入历法解释，中文与数字格式等价；邻近“出生日期”字样不能豁免其他日期的公历合法性检查。
+- 历史经历须在同一句明确来自用户并注明尚未独立核验，日期须早于冻结 asOfDate；仅有月份时整月须已过去。支持“你在2025年3月换过工作，这是用户提供的经历，尚未独立核验”与“用户称2025年3月曾换工作，未经独立核验”等窄格式。转述须有“过/曾/已”等已发生标记，不能附带未来或因果推论；未来保证不能借用户归属放行。例外只覆盖已绑定的历史日期字符，事件尾文与第二时间表达仍完整进入现有检查，不整句屏蔽。
+- 例外只确认资料表达与时间范围可接受，不确认用户经历真实，不证明事前命中，不补足论证的未决条件。不能靠更换字段标签获得例外。

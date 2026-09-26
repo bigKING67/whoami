@@ -378,14 +378,19 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
   const referenceYear = timeReference
     ? Number(timeReference.asOfDate.slice(0, 4))
     : null;
-  const temporalText = (value: unknown, label: string) =>
+  const temporalText = (
+    value: unknown,
+    label: string,
+    role: "prose" | "title" | "reality-source" = "prose",
+  ) =>
     validateReportTemporalText(
       reportText(value, label),
       label,
       evidence.years,
       referenceYear,
+      { role, asOfDate: timeReference?.asOfDate, birth: evidence.input },
     );
-  temporalText(r.title, "title");
+  temporalText(r.title, "title", "title");
   temporalText(r.uncertainty, "uncertainty");
   const factMap = new Map(evidence.facts.map((f) => [f.id, f]));
   const ruleMap = new Map(evidence.rules.map((x) => [x.id, x]));
@@ -701,6 +706,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
         temporalText(
           reality.source,
           "bazi timingChain.realityBasis.source",
+          "reality-source",
         );
         if (a.status === "conditional" && missingLinks.length)
           throw new InputError(
@@ -914,7 +920,11 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
             "现实触发资料未绑定时 ziwei-timing 必须保持 unresolved",
           );
       } else {
-        temporalText(reality.source, "timingChain.realityBasis.source");
+        temporalText(
+          reality.source,
+          "timingChain.realityBasis.source",
+          "reality-source",
+        );
         if (a.status === "conditional" && missingLinks.length)
           throw new InputError(
             "PREMISE_STATUS_MISMATCH",

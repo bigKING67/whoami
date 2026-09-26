@@ -25,7 +25,7 @@ const FULL_NUMERIC_DATE_PATTERN =
 const YEARLESS_NUMERIC_DATE_PATTERN =
   /(?<![\dA-Za-z])(\d{1,2})([-/.])(\d{1,2})(?![\dA-Za-z])/gu;
 const NUMERIC_CLOCK_CANDIDATE_PATTERN =
-  /(?<![\dA-Za-z])(\d{1,2})[:：](\d{2})(?:[:：](\d{2})(?:\.\d+)?)?(?![\dA-Za-z])/gu;
+  /(?:(?<![\dA-Za-z])(?<!\d[:：])|(?<=(?:19|20)\d{2}-\d{2}-\d{2}[Tt]))(\d{1,2})[:：](\d{2})(?:[:：](\d+)(?:\.\d+)?)?(?=$|[^\dA-Za-z]|[Zz](?![\dA-Za-z]))(?![:：]\d)/gu;
 const CLOCK_TIME_PATTERN =
   /(?:(?:上午|下午|早上|晚上|中午|凌晨|清晨|傍晚)\s*(?:(?:[01]?\d|2[0-3]|[一二三四五六七八九十两]+)\s*(?:点|时)(?:半|整|[0-5]?\d分?)?|(?:[01]?\d|2[0-3])[:：][0-5]\d))|(?<![\dA-Za-z])(?:[01]?\d|2[0-3])[:：][0-5]\d(?![\dA-Za-z])/gu;
 const RELATIVE_DAYPART_PATTERN =
@@ -120,12 +120,105 @@ function numericPlainDateTime(
     );
   return Temporal.PlainDateTime.from({ year, month, day, hour, minute, second });
 }
+type TemporalTextContext = {
+  role?: "prose" | "title" | "reality-source";
+  asOfDate?: string;
+  birth?: { calendar: "solar" | "lunar"; date: string; leapMonth: boolean };
+};
+
+const CHINESE_DATE = /((?:19|20)\d{2})年\s*(\d{1,2})月(?:\s*(\d{1,2})[日号])?/gu;
+const CONTRAST_OR_INFERENCE = /但是|但|然而|不过|可是|却|反而|因此|所以|说明|意味着|证明|可见|从而|必然|一定|肯定|保证|注定|将会|将要|且|并|而|又|同时|随后|然后|接着|此外|另外|[:：]/u;
+const BIRTH_STATEMENT = /^(?:你的|本次)?出生日期(?:是|为|[:：])\s*(公历|农历)?\s*((?:19|20)\d{2})(?:年|-)(闰)?(\d{1,2})(?:月|-)(\d{1,2})(?:日|号)?$/u;
+const LIMITATION_STATEMENT = /^(?:目前|现阶段|现在)?(?:尚不能|不能|无法|尚无法|尚不足以)(?:判断|预测|确定|断言)(?:(?:近期|不久|很快|短期内|下个月|本月|这个月|下周|今年|明年|后年|(?:19|20)\d{2}年(?:\d{1,2}月(?:\d{1,2}[日号])?)?)(?:是否|能否)(?:会|能够)?(?:升职|加薪|跳槽|入职|离职|结婚|复合|成功|失败)|(?:什么时候|何时|几时)(?:会|能)?(?:升职|加薪|跳槽|入职|离职|结婚|复合|成功|失败)|(?:近期|不久|很快|短期内|下个月|本月|这个月|下周)的(?:结果|运势|情况))$/u;
+
+function matchingBirthStatement(text: string, context: TemporalTextContext, label: string) {
+  const birth = BIRTH_STATEMENT.exec(text.trim());
+  if (!birth || !context.birth) return false;
+  const calendar = birth[1] === "农历" ? "lunar" : "solar";
+  if (calendar === "solar" && !validGregorianDate(Number(birth[2]), Number(birth[4]), Number(birth[5])))
+    throw new InputError("INVALID_NUMERIC_DATE", `${label} 使用了无效公历出生日期`);
+  const date = `${birth[2]}-${birth[4]!.padStart(2, "0")}-${birth[5]!.padStart(2, "0")}`;
+  if (calendar !== context.birth.calendar || date !== context.birth.date ||
+      Boolean(birth[3]) !== context.birth.leapMonth)
+    throw new InputError("FACT_MISMATCH", `${label} 的出生日期或历法与当前输入不一致`);
+  return true;
+}
+
+// Mask only narrowly recognized statements, retaining offsets for the checks below.
+// A disclaimer never exempts adjacent clauses or the original date/time validation.
+function nonPredictiveText(
+  text: string,
+  context: TemporalTextContext,
+  label: string,
+) {
+  const mask = (value: string) => value.replace(/[^\r\n]/g, " ");
+  return text.replace(/[^。！？；\n]+/gu, (sentence) => {
+    const trimmed = sentence.trim();
+    let hasBirthStatement = false;
+    const birthText = sentence.replace(/[^，,]+/gu, (clause) => {
+      if (!matchingBirthStatement(clause, context, label)) return clause;
+      hasBirthStatement = true;
+      return mask(clause);
+    });
+    if (hasBirthStatement) {
+      for (const clause of sentence.split(/[，,]/u)) {
+        const calendar = /^历法(?:是|为)(公历|农历)$/u.exec(clause.trim());
+        if (calendar && (calendar[1] === "农历" ? "lunar" : "solar") !== context.birth?.calendar)
+          throw new InputError("FACT_MISMATCH", `${label} 的历法说明与当前出生输入不一致`);
+      }
+    }
+    // Attribution and uncertainty belong to the same sentence. No inference or
+    // future assertion is admitted, even when it is attributed to the user.
+    const historical = /^(?:(?:你|用户|命主|我)在([^，,]+)[，,](?:这是)?用户(?:提供的经历|本轮陈述|自述)[，,](?:尚未|未经|尚未经)独立核验|用户(?:自述|称|表示)[:：]?\s*([^，,]+)[，,](?:尚未|未经|尚未经)独立核验)$/u.exec(trimmed);
+    if (historical && context.asOfDate && validIsoDate(context.asOfDate)) {
+      const body = (historical[1] ?? historical[2])!;
+      const date = /^((?:19|20)\d{2})(?:年|-)(\d{1,2})(?:月(?:([0-3]?\d)[日号])?|-(\d{1,2}))(.+)$/u.exec(body);
+      if (date && !CONTRAST_OR_INFERENCE.test(body) &&
+          !/会|将|可能|能够|可以|应当|应该|适合|有利|不利|预计|未来|运势|命盘/u.test(date[5]!) &&
+          /过|曾|已/u.test(date[5]!)) {
+        const year = Number(date[1]), month = Number(date[2]);
+        const dayText = date[3] ?? date[4];
+        const day = dayText ? Number(dayText) : 1;
+        if (!validGregorianDate(year, month, day))
+          throw new InputError("INVALID_NUMERIC_DATE", `${label} 的历史日期无效`);
+        const historicalEnd = dayText
+          ? `${date[1]}-${date[2]!.padStart(2, "0")}-${dayText.padStart(2, "0")}`
+          : `${date[1]}-${date[2]!.padStart(2, "0")}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`;
+        if (historicalEnd < context.asOfDate) {
+          // Exempt only the bound historical date. Leave the event text and any
+          // second time expression visible to every existing temporal guard.
+          const token = body.slice(0, body.length - date[5]!.length);
+          const start = sentence.indexOf(body);
+          return sentence.slice(0, start) + mask(token) + sentence.slice(start + token.length);
+        }
+      }
+    }
+    return birthText.replace(/[^，,]+/gu, (clause) => {
+      const value = clause.trim();
+      if (!CONTRAST_OR_INFERENCE.test(value) &&
+          LIMITATION_STATEMENT.test(value))
+        return mask(clause);
+      return clause;
+    });
+  });
+}
+
 export function validateReportTemporalText(
   text: string,
   label: string,
   evidenceYears: number[],
   referenceYear: number | null,
+  context?: TemporalTextContext,
 ) {
+  // Only a complete, input-matched lunar birth statement can change calendar
+  // interpretation. A masked disclaimer or nearby word is not a calendar tag.
+  const lunarBirthRanges = context?.birth?.calendar === "lunar"
+    ? [...text.matchAll(/[^，,。！？；\n]+/gu)]
+      .filter((sentence) => matchingBirthStatement(sentence[0], context, label))
+      .map((sentence) => ({ start: sentence.index, end: sentence.index + sentence[0].length }))
+    : [];
+  const isExactLunarBirth = (index: number, length: number) =>
+    lunarBirthRanges.some((range) => range.start <= index && range.end >= index + length);
   const resolvedTextInstants: Array<{
     source: string;
     instant: string;
@@ -153,6 +246,7 @@ export function validateReportTemporalText(
     );
   const fullNumericDates = [...text.matchAll(FULL_NUMERIC_DATE_PATTERN)];
   for (const numericDate of fullNumericDates) {
+    if (isExactLunarBirth(numericDate.index, numericDate[0].length)) continue;
     const year = Number(numericDate[1]);
     const month = Number(numericDate[3]);
     const day = Number(numericDate[5]);
@@ -203,10 +297,11 @@ export function validateReportTemporalText(
     const hour = Number(clockTime[1]);
     const minute = Number(clockTime[2]);
     const second = clockTime[3] === undefined ? 0 : Number(clockTime[3]);
-    if (hour > 23 || minute > 59 || second > 59)
+    if (hour > 23 || minute > 59 || second > 59 ||
+        (clockTime[3] !== undefined && clockTime[3].length !== 2))
       throw new InputError(
         "INVALID_CLOCK_TIME",
-        `${label} 使用了无效钟点“${clockTime[0]}”；小时须为 00—23，分秒须为 00—59`,
+        `${label} 使用了无效钟点“${clockTime[0]}”；小时须为 00—23，分秒须为 00—59，秒整数部分须为两位`,
       );
   }
   for (const timeZone of text.matchAll(AMBIGUOUS_TIME_ZONE_PATTERN)) {
@@ -537,13 +632,19 @@ export function validateReportTemporalText(
       `${label} 把绝对时刻“${resolved.source}”用于当前年度 evidence 不支持的具体时点判断；请先接入对应日级和小时级证据`,
     );
   }
-  const subannual = SUBANNUAL_RELATIVE_TIME_PATTERN.exec(text);
+  const granularityText = context ? nonPredictiveText(text, context, label) : text;
+  for (const match of text.matchAll(CHINESE_DATE)) {
+    const exactLunarBirth = isExactLunarBirth(match.index, match[0].length);
+    if (!exactLunarBirth && !validGregorianDate(Number(match[1]), Number(match[2]), Number(match[3] ?? 1)))
+      throw new InputError("INVALID_NUMERIC_DATE", `${label} 使用了无效公历日期“${match[0]}”`);
+  }
+  const subannual = SUBANNUAL_RELATIVE_TIME_PATTERN.exec(granularityText);
   if (subannual)
     throw new InputError(
       "UNSUPPORTED_TIME_GRANULARITY",
       `${label} 使用了当前年度 evidence 不支持的细分时间“${subannual[0]}”；请退回明确年度主题，或先接入对应流月、流日或节气证据`,
     );
-  for (const absoluteSubannual of text.matchAll(
+  for (const absoluteSubannual of granularityText.matchAll(
     ABSOLUTE_SUBANNUAL_TIME_PATTERN,
   )) {
     const explicitYear = absoluteSubannual[1]
@@ -553,7 +654,8 @@ export function validateReportTemporalText(
       explicitYear !== null &&
       !evidenceYears.includes(explicitYear) &&
       (referenceYear === null || explicitYear < referenceYear) &&
-      (label === "title" || label === "timingChain.realityBasis.source")
+      (context?.role === "title" || context?.role === "reality-source") &&
+      !/(?:适合|会|能|应该|预测|吉凶|有利|不利|选择|机会|窗口)/u.test(localContext(absoluteSubannual.index, absoluteSubannual[0].length))
     )
       continue;
     throw new InputError(
@@ -565,7 +667,8 @@ export function validateReportTemporalText(
     ...fullNumericDates,
     ...yearlessNumericDates,
   ]) {
-    if (!hasDecisionContext(numericDate.index, numericDate[0].length))
+    if (!granularityText.slice(numericDate.index, numericDate.index + numericDate[0].length).trim() ||
+        !hasDecisionContext(numericDate.index, numericDate[0].length))
       continue;
     throw new InputError(
       "UNSUPPORTED_TIME_GRANULARITY",
@@ -586,13 +689,13 @@ export function validateReportTemporalText(
       `${label} 把相对日内时点“${daypart[0]}”用于当前 evidence 不支持的事件判断；请先明确当地日期与 IANA 时区，并接入对应日级和小时级证据`,
     );
   }
-  const multiyearRange = MULTIYEAR_RELATIVE_RANGE_PATTERN.exec(text);
+  const multiyearRange = MULTIYEAR_RELATIVE_RANGE_PATTERN.exec(granularityText);
   if (multiyearRange)
     throw new InputError(
       "AMBIGUOUS_YEAR_RANGE",
       `${label} 使用了无法唯一确定首尾年份的多年范围“${multiyearRange[0]}”；请改写为明确 YYYY—YYYY 年度闭区间，并说明是否包含当前年`,
     );
-  const vagueHorizon = VAGUE_TIME_HORIZON_PATTERN.exec(text);
+  const vagueHorizon = VAGUE_TIME_HORIZON_PATTERN.exec(granularityText);
   if (vagueHorizon)
     throw new InputError(
       "AMBIGUOUS_TIME_HORIZON",
