@@ -28,7 +28,7 @@ const HELP = `whoami（本地核心，不调用模型 API）
   compare --before <birth.json> --after <birth.json> [--years ...] [--before-candidate <ID>] [--after-candidate <ID>]
   report-template --input <birth.json> [--mode combined|bazi|ziwei] [--years ...] [--granularity year|month]
   report-check --input <birth.json> --report <report.json> [--years ...] [--granularity year|month]
-  answer-check --input <birth.json> --text <answer.md> [--years ...] [--as-of YYYY-MM-DD] [--granularity year|month]  （快速档纯文本答复门禁）
+  answer-check --input <birth.json> (--text <answer.md> | --audit <含 answer 的清单>) [--years ...] [--as-of YYYY-MM-DD] [--granularity year|month] [--audit <audit.json>]  （快速档纯文本答复门禁）
   render --input <birth.json> --report <report.json> [--years ...] [--granularity year|month]
   benchmark-prepare --dataset <data.json> --output-dir <private-dir> [--seed whoami-v1] [--astro <fortune_api_results.json>]
   benchmark-score --key <answers.json> --predictions <predictions.json>
@@ -59,7 +59,7 @@ function run() {
     compare: ["before", "after", "years", "before-candidate", "after-candidate"],
     "report-template": ["input", "years", "mode", "granularity"],
     "report-check": ["input", "years", "report", "granularity"],
-    "answer-check": ["input", "years", "text", "as-of", "granularity"],
+    "answer-check": ["input", "years", "text", "as-of", "granularity", "audit"],
     render: ["input", "years", "report", "granularity"],
     "benchmark-prepare": ["dataset", "output-dir", "seed", "astro"],
     "benchmark-score": ["key", "predictions"],
@@ -104,8 +104,8 @@ function run() {
   const granularity = opts.granularity ?? "year";
   if (granularity !== "year" && granularity !== "month")
     throw new InputError("INVALID_ARGUMENT", "granularity 只能是 year 或 month");
-  if (command === "answer-check" && opts.text === "-" && opts.input === "-")
-    throw new InputError("INVALID_ARGUMENT", "input和text不能同时从stdin读取；请至少为一侧提供文件");
+  if (command === "answer-check" && [opts.text, opts.input, opts.audit].filter((v) => v === "-").length > 1)
+    throw new InputError("INVALID_ARGUMENT", "input、text、audit 最多一项从stdin读取");
   const emit = (x: unknown) =>
     process.stdout.write(JSON.stringify(x, null, 2) + "\n");
   if (command === "attestation-prepare") {
@@ -234,14 +234,22 @@ function run() {
     return;
   }
   if (command === "answer-check") {
-    const path = required("text");
+    // 清单可内嵌答复原文（audit.answer），此时用 --audit - 一次从 stdin 传入，答复不落盘。
+    const audit = opts.audit ? read("audit") : undefined;
+    const embedded =
+      audit && typeof audit === "object" && typeof (audit as { answer?: unknown }).answer === "string"
+        ? (audit as { answer: string }).answer
+        : undefined;
     let text: string;
-    try {
-      text = readFileSync(path === "-" ? 0 : path, "utf8");
-    } catch {
-      throw new InputError("INVALID_ARGUMENT", "text 文件不可读");
-    }
-    emit(checkAnswer(text, context, opts["as-of"]));
+    if (opts.text) {
+      try {
+        text = readFileSync(opts.text === "-" ? 0 : opts.text, "utf8");
+      } catch {
+        throw new InputError("INVALID_ARGUMENT", "text 文件不可读");
+      }
+    } else if (embedded !== undefined) text = embedded;
+    else throw new InputError("MISSING_ARGUMENT", "需要 --text，或在 --audit 中提供 answer");
+    emit(checkAnswer(text, context, opts["as-of"], audit));
     return;
   }
   const report = read("report");
