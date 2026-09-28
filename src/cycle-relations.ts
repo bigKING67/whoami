@@ -11,12 +11,12 @@ const BRANCH_PAIRS = [
   ["六合", "子丑 寅亥 卯戌 辰酉 巳申 午未"],
   ["害", "子未 丑午 寅巳 卯辰 申亥 酉戌"],
 ] as const;
-const BRANCH_GROUPS = [
+export const BRANCH_GROUPS = [
   ["三合", "申子辰 亥卯未 寅午戌 巳酉丑"],
   ["三刑", "寅巳申 丑戌未"],
 ] as const;
-// 三会只用于岁运：本命 relations 属冻结的 v1 口径，未收录三会。
-const SEASONAL_GROUPS = [["三会", "寅卯辰 巳午未 申酉戌 亥子丑"]] as const;
+// 三会与下列扩展成对关系属 v2 口径：v2 的本命、流年、流月一致使用；v1 本命 relations 冻结，不含这些项。
+export const SEASONAL_GROUPS = [["三会", "寅卯辰 巳午未 申酉戌 亥子丑"]] as const;
 const STEM_PAIRS = [
   ["五合", "甲己 乙庚 丙辛 丁壬 戊癸"],
   ["冲", "甲庚 乙辛 丙壬 丁癸"],
@@ -27,10 +27,22 @@ const BRANCH_CLASH = BRANCH_PAIRS[0][1];
 const inPair = (table: string, a: string, b: string) =>
   a !== b && table.split(" ").some((pair) => pair.includes(a) && pair.includes(b));
 
-/** 两个地支之间的成对关系；本命与岁运共用同一张表，保证口径一致。 */
+// 三合局按生、旺、墓：含旺支的两支为半合，生墓两支为拱合。
+const TRINE_FRAMES = ["申子辰", "亥卯未", "寅午戌", "巳酉丑"];
+const EXTENDED_PAIRS = [
+  ["破", "子酉 卯午 辰丑 未戌 寅亥 巳申"],
+  // 三刑组内的两两相刑；子卯刑已在基础表中。
+  ["刑", "寅巳 巳申 寅申 丑戌 戌未 丑未"],
+] as const;
+
+/**
+ * 两个地支之间的成对关系；本命与岁运共用同一张表，保证口径一致。
+ * extended=false 为冻结的 v1 口径；true 另列半合、拱合、破与三刑组内两两相刑。
+ */
 export function pairBranchRelations(
   a: { position: string; branch: string },
   b: { position: string; branch: string },
+  extended = false,
 ): BranchRelation[] {
   const out: BranchRelation[] = [];
   const at = { positions: [a.position, b.position], branches: a.branch + b.branch };
@@ -39,6 +51,12 @@ export function pairBranchRelations(
   if (a.branch === b.branch && "辰午酉亥".includes(a.branch))
     out.push({ kind: "自刑", ...at });
   if (inPair("子卯", a.branch, b.branch)) out.push({ kind: "刑", ...at });
+  if (!extended) return out;
+  const frame = TRINE_FRAMES.find((f) => a.branch !== b.branch && f.includes(a.branch) && f.includes(b.branch));
+  if (frame)
+    out.push({ kind: [a.branch, b.branch].includes(frame[1]!) ? "半合" : "拱合", ...at });
+  for (const [kind, table] of EXTENDED_PAIRS)
+    if (inPair(table, a.branch, b.branch)) out.push({ kind, ...at });
   return out;
 }
 
@@ -77,7 +95,7 @@ function pillarRelations(op: Located, other: Located, layer: CycleRelation["laye
   for (const [kind, table] of STEM_PAIRS)
     if (inPair(table, op.stem, other.stem))
       out.push({ layer, scope: "stem", kind, positions, value: op.stem + other.stem });
-  for (const r of pairBranchRelations(op, other))
+  for (const r of pairBranchRelations(op, other, true))
     out.push({ layer, scope: "branch", kind: r.kind, positions, value: r.branches });
   const pillar = op.stem + op.branch + other.stem + other.branch;
   if (op.stem === other.stem && op.branch === other.branch)

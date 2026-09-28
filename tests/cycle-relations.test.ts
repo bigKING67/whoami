@@ -88,6 +88,17 @@ test("本命已完整的组合不记为岁运组合；只有岁运为补齐所�
   assert.deepEqual(completeBranchGroups([...needs, { position: "day", branch: "辰" }], ["yearly", "decade-2"]), []);
 });
 
+test("v2 扩展关系：半合含旺支、拱合为生墓、破与三刑组内两两相刑", () => {
+  const kinds = (a: string, b: string) =>
+    pairBranchRelations({ position: "a", branch: a }, { position: "b", branch: b }, true).map((r) => r.kind);
+  assert.deepEqual(kinds("申", "子"), ["半合"]);
+  assert.deepEqual(kinds("申", "辰"), ["拱合"]);
+  assert.deepEqual(kinds("卯", "午"), ["破"]);
+  assert.deepEqual(kinds("巳", "申"), ["六合", "破", "刑"]);
+  assert.deepEqual(kinds("寅", "申"), ["冲", "刑"]);
+  assert.deepEqual(pairBranchRelations({ position: "a", branch: "巳" }, { position: "b", branch: "申" }).map((r) => r.kind), ["六合"]);
+});
+
 test("成对与成组地支关系沿用本命口径", () => {
   assert.deepEqual(pairBranchRelations({ position: "a", branch: "子" }, { position: "b", branch: "卯" }).map((r) => r.kind), ["刑"]);
   assert.deepEqual(pairBranchRelations({ position: "a", branch: "午" }, { position: "b", branch: "午" }).map((r) => r.kind), ["自刑"]);
@@ -96,7 +107,7 @@ test("成对与成组地支关系沿用本命口径", () => {
   assert.deepEqual(completeBranchGroups(members, ["decade-1"]), []);
 });
 
-test("evidence v2 新增 cycleRelations 并由 R-bazi-timing 关联；v1 保持冻结且共有事实逐字节一致", () => {
+test("evidence v2 新增 cycleRelations 并由 R-bazi-timing 关联；v1 保持冻结，v2 本命关系只扩展不删改", () => {
   const e = contextFor(birth, [2026]);
   const old = contextFor(birth, [2026], "whoami.evidence.v1");
   const c = e.candidateIds[0]!;
@@ -106,7 +117,15 @@ test("evidence v2 新增 cycleRelations 并由 R-bazi-timing 关联；v1 保持�
   assert(!old.facts.some((f) => f.id === `${c}.bazi.cycleRelations`));
   assert(e.rules.find((r) => r.id === `${c}.R-bazi-timing`)!.factRefs.includes(`${c}.bazi.cycleRelations`));
   const byId = new Map(e.facts.map((f) => [f.id, f]));
-  for (const f of old.facts) assert.deepEqual(byId.get(f.id), f);
+  // v2 本命 relations 扩展了半合、拱合、破、两两相刑与三会；其余共有事实逐字节一致，v1 关系全部保留。
+  for (const f of old.facts) {
+    if (f.id.endsWith(".bazi.relations")) {
+      const extended = byId.get(f.id)!.value as unknown[];
+      for (const r of f.value as unknown[]) assert(extended.some((x) => JSON.stringify(x) === JSON.stringify(r)));
+      continue;
+    }
+    assert.deepEqual(byId.get(f.id), f);
+  }
   assert.equal(e.chartId, old.chartId);
   assert.notEqual(e.evidenceId, old.evidenceId);
 });

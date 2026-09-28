@@ -22,7 +22,7 @@
 
 八字岁运的传统来源、多版本扫描本校勘、反例与吸收边界见[岁运来源审计](bazi-timing.md)；目标章节的段落完整性、实质异文和层次见[整章版本感知校本](bazi-timing-chapter-collation.md)及其[机器可读底稿](bazi-timing-collation.json)，五个扫描见证的逐页字面见[外交转录说明](bazi-timing-diplomatic-transcription.md)与[机器可读转录](bazi-timing-diplomatic-transcription.json)，逐栏回查见[坐标与局部影像定位](bazi-timing-column-locators.md)及其[机器可读坐标](bazi-timing-column-locators.json)，局部版本亲疏信号见[版本关系证据矩阵](bazi-timing-stemma-matrix.md)与[机器矩阵](bazi-timing-stemma-matrix.json)。三个疑难读法已另做[来源隐藏盲审包](bazi-timing-blind-review/README.md)，供两至三位独立审读者逐字复核；当前仅完成材料，不代表已经取得外部意见。运行时按[八字岁运联读](../../references/bazi-timing.md)逐层回配；当前只吸收论证顺序、版本边界和文本层次，不生成固定吉凶、年度评分或事件预测。
 
-财格候选的显干前提与未决条件见 [财格条件研究](wealth-review.md)。
+财格候选的显干前提与未决条件见 [财格条件研究](wealth-review.md)；正官、七杀、印、食神、伤官五格见 [五格条件研究](pattern-review.md)。
 
 紫微动态依据见 [四化分层与落宫](ziwei-transforms.md)。
 

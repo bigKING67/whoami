@@ -1,6 +1,7 @@
 import type { Chart } from "./chart.js";
 import { buildEvidence, type Evidence } from "./evidence.js";
 import type { wealthReview } from "./wealth-review.js";
+import type { patternReview } from "./pattern-review.js";
 
 const POSITIONS: Record<string, string> = { year: "年", month: "月", day: "日", hour: "时" };
 const describe = (p: { position: string; stem: string; tenGod: string }) =>
@@ -27,13 +28,16 @@ export function wealthReviewSummary(w: ReturnType<typeof wealthReview>): string[
   ];
 }
 
+const ROLE_NAMES = { main: "本气", middle: "中气", residual: "余气" } as const;
+const CATEGORY_NAMES = { support: "支持", risk: "风险", rescue: "救应" } as const;
+
 /** Deterministic view of existing evidence; no new traditional judgments. */
 export function renderRuleReview(chart: Chart): string {
   const e = buildEvidence(chart); // 缺时辰沿用既有拒绝行为，不生成空盘解读。
   const lines = [
-    "# 八字规则复核：财格候选",
+    "# 八字规则复核：财格与五格候选",
     "",
-    "这是现有财格规则的确定性摘要，不是完整八字或紫微分析，不判整体吉凶，也不预测现实事件。",
+    "这是现有财格与正官、七杀、印、食神、伤官五格规则的确定性摘要，不是完整八字或紫微分析，不判整体吉凶，也不预测现实事件。",
     "",
     `命盘状态：${chart.status}；候选数：${chart.candidates.length}。所有候选分别保留，不择优选盘。`,
     `证据年份：${e.years.join("、")}。下列规则只检查本命，不据年份推断流年事件。`,
@@ -61,12 +65,30 @@ export function renderRuleReview(chart: Chart): string {
         `- 阻断依据：${x.condition}；反例为${x.positions.map(describe).join("、")}。`),
       "", "尚需论证：身强弱、财官实际作用、合化及救应、藏干影响。财印相邻或财官分支阻断不能直接推成整格失败；未见反例也不能推成成格。",
       "", `依据：\`${factId}\`；规则：\`${c.id}.R-bazi-wealth-review\`。`);
+    const patternFact = e.facts.find(f => f.id === `${candidate}.bazi.patternReview`);
+    if (patternFact) {
+      const r = patternFact.value as ReturnType<typeof patternReview>;
+      const candidates = r.patterns.filter(p => p.status === "candidate-only");
+      lines.push("", "### 五格候选（正官、七杀、印、食神、伤官）", "",
+        ...(candidates.length ? [] : ["- 月支藏干不含这五类十神；入口外不代表无格。"]));
+      for (const p of candidates) {
+        const observed = p.checks.filter(x => x.prerequisite === "observed");
+        lines.push(
+          `- **${p.label}**：月支${r.monthBranch}藏${p.entry.map(h => `${h.stem}（${h.tenGod}，${ROLE_NAMES[h.role]}${h.exposedAt.length ? `，透于${h.exposedAt.map(x => POSITIONS[x]).join("、")}干` : "，未透"}）`).join("、")}。` +
+            (p.competingExposed.length ? `月令另有${p.competingExposed.map(h => `${h.stem}（${h.tenGod}）`).join("、")}透出，透者作主须另证。` : ""),
+          ...(observed.length
+            ? observed.map(x => `  - ${CATEGORY_NAMES[x.category]}·${x.label}：「${x.quote}」（[原文](${x.source})）。待核：${x.pending}。`)
+            : ["  - 所列显干条件均未见；未见不等于藏干无作用。"]),
+        );
+      }
+      lines.push("", `五格结论：${r.judgment}。支持、风险与救应并列保留，不计分、不抵消。依据：\`${patternFact.id}\`；规则：\`${c.id}.R-bazi-pattern-review\`。`);
+    }
   }
   lines.push("", "## 核对与来源", "",
     `chartId：\`${e.chartId}\``, `evidenceId：\`${e.evidenceId}\``, "",
     "细项可用相同输入与年份运行 context，按上述事实 ID 核对。出生资料变化后必须重新计算。",
     "",
-    "传统来源：[论用神成败救应](https://donglishuzhai.net/chapter/3722.html)、[论财](https://donglishuzhai.net/chapter/3746.html)。当前采用原文转录，未完成影印校勘；工程检查不证明传统理论或现实预测有效。",
+    "传统来源：[论用神成败救应](https://donglishuzhai.net/chapter/3722.html)、[论用神变化](https://donglishuzhai.net/chapter/3723.html)、[论财](https://donglishuzhai.net/chapter/3746.html)、[论正官](https://donglishuzhai.net/chapter/3744.html)、[论印](https://donglishuzhai.net/chapter/3748.html)、[论食神](https://donglishuzhai.net/chapter/3750.html)、[论偏官](https://donglishuzhai.net/chapter/3752.html)、[论伤官](https://donglishuzhai.net/chapter/3754.html)。当前采用原文转录，未完成影印校勘；工程检查不证明传统理论或现实预测有效。",
     "");
   return lines.join("\n");
 }

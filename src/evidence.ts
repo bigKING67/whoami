@@ -1,12 +1,16 @@
 import { buildChart, digest, element, type Chart, type Granularity } from "./chart.js";
 import { ziweiTransforms } from "./ziwei-transforms.js";
+import { ziweiFlyingTransforms } from "./ziwei-flying.js";
 import { wealthReview } from "./wealth-review.js";
+import { patternReview } from "./pattern-review.js";
 import { InputError } from "./input.js";
 import {
+  BRANCH_GROUPS,
   completeBranchGroups,
   cycleRelations,
   monthlyCycles,
   pairBranchRelations,
+  SEASONAL_GROUPS,
   type BranchRelation,
 } from "./cycle-relations.js";
 
@@ -141,6 +145,13 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
       wealthReview(c.bazi),
       "whoami 显干前提检测；传统条件见《子平真诠·论用神成败救应》原文转录",
     );
+    const patternRef = v2
+      ? add(
+          id, "bazi", "patternReview", "正官/七杀/印/食神/伤官格候选的显干条件核对（非成败裁定）",
+          patternReview(c.bazi),
+          "whoami 显干前提检测；条件与引文取《子平真诠》论用神成败救应及各格章节（东篱书斋转录本）",
+        )
+      : null;
     const roots = c.bazi.pillars
       .filter((p) =>
         p.hiddenStems.some((s) => s.element === element(c.bazi.dayMaster)),
@@ -175,8 +186,10 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
     const relations: BranchRelation[] = [];
     for (let i = 0; i < 4; i++)
       for (let j = i + 1; j < 4; j++)
-        relations.push(...pairBranchRelations(c.bazi.pillars[i]!, c.bazi.pillars[j]!));
-    relations.push(...completeBranchGroups(c.bazi.pillars));
+        relations.push(...pairBranchRelations(c.bazi.pillars[i]!, c.bazi.pillars[j]!, v2));
+    relations.push(
+      ...completeBranchGroups(c.bazi.pillars, [], v2 ? [...BRANCH_GROUPS, ...SEASONAL_GROUPS] : BRANCH_GROUPS),
+    );
     relationRefs.push(
       add(
         id,
@@ -184,7 +197,9 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
         "relations",
         "地支关系（不自动判化局或事件）",
         relations,
-        "传统合冲刑害关系表；首版仅列全三合/全三刑与成对关系",
+        v2
+          ? "传统合冲刑害破关系表：成对关系含半合、拱合、破与三刑组内两两相刑，成组关系含三合、三刑、三会；不判化局"
+          : "传统合冲刑害关系表；首版仅列全三合/全三刑与成对关系",
       ),
     );
     const rootDetailRef = add(
@@ -238,6 +253,15 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
       guidance: "逐项说明已出现的显干前提与尚未裁定的旺衰、位置及制化条件。支持、风险和救应线索必须同时保留；not-observed 不等于无作用，outside-scope 不等于无格。不能从某个组合出现直接输出成格、破格或救应完成，最终仍需说明未决条件。",
       source: "references/analysis.md#财格候选复核",
     });
+    if (patternRef)
+      rules.push({
+        id: `${id}.R-bazi-pattern-review`,
+        candidate: id,
+        label: "五格候选分清入口、显干条件与成败",
+        factRefs: [patternRef, monthExposureRef, dm, ...pillarRefs, ...relationRefs],
+        guidance: "先说明月支藏干哪一个十神构成候选、是否透出及有无竞争透干，再逐项引用已出现的支持、风险与救应条件。同一显干组合在不同强弱条件下方向相反时须按条件分支说明，不能只取有利一侧；金水季节、次序例外、合化与位置由宿主论证。不能从组合出现直接输出成格、败格或救应完成。",
+        source: "references/analysis.md#五格候选复核",
+      });
     rules.push({
       id: `${id}.R-bazi-month-exposure`,
       candidate: id,
@@ -328,6 +352,12 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
       id, "ziwei", "transformations", "生年、大限、流年四化落宫（分层）",
       ziweiTransforms(c.ziwei), "iztro@2.6.1 运限输出 + whoami 星名/本命宫位联结",
     );
+    const flyingRef = v2
+      ? add(
+          id, "ziwei", "flyingTransforms", "本命十二宫宫干飞化与自化落点（不判吉凶）",
+          ziweiFlyingTransforms(c.ziwei), "iztro@2.6.1 十干四化表 + whoami 星名/本命宫位联结",
+        )
+      : null;
     const ziweiMonthlyRef = monthly && c.ziwei.monthly
       ? add(
           id, "ziwei", "monthly", "紫微流月（农历月）宫职、四化与流月星",
@@ -337,8 +367,18 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
     rules.push({
       id: `${id}.R-ziwei-transformations`, candidate: id,
       label: "四化分层与落宫核对",
-      factRefs: [transformRef, base, dynamic, ...(ziweiMonthlyRef ? [ziweiMonthlyRef] : []), ...palaceRefs],
+      factRefs: [
+        transformRef,
+        base,
+        dynamic,
+        ...(flyingRef ? [flyingRef] : []),
+        ...(ziweiMonthlyRef ? [ziweiMonthlyRef] : []),
+        ...palaceRefs,
+      ],
       guidance: "逐项核对四化来自生年、大限还是流年，以及星曜、本命落宫和已提供的流年宫职。大限年龄与年份均沿用虚岁/农历年口径，不当作生日或公历元旦切换。不能将大限命宫误作所有四化落宫；缺星、重名和未提供宫职保持未知，不用化忌直接断灾或化禄直接断财。" +
+        (flyingRef
+          ? "宫干飞化与自化是本命宫之间的结构线索，须说明从哪宫化出、落入哪宫及所用十干四化口径；不能把飞化落点直接当作运限事件，也不能与生年、运限四化混为一层。"
+          : "") +
         (ziweiMonthlyRef
           ? "流月四化只叠加在生年、大限与流年层之上，按农历月表达；闰月两段须说明所用口径并保留另一派分支。"
           : ""),

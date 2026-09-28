@@ -7,7 +7,7 @@
 1. 固定出生候选、问题主题、报告时区和明确年份；时间表达与 evidence 粒度先通过 [时间契约](time.md)。
 2. 先完成当前候选的旺衰、格局、调候、扶抑与最终取舍。`bazi-timing` 可以引用这些已经写出的条件，不能在运年段暗中重判本命，也不能把 unresolved 前提当成既定喜忌。
 3. 从 `.bazi.cycles` 读取实际大运段、逐年干支和立春边界。起运状态为 range 时，保留范围及可能跨段的分支，不以代表值替代确认值。
-4. evidence v2 的 `.bazi.cycleRelations` 逐年给出立春区间、该流年内生效的大运（`decadeStatus`：single / switches-within-year / first-decade-starts-within-year / last-decade-ends-within-year / start-uncertain / before-first-decade / after-last-decade，及每步运的 coverage；起运为 range 且当年有非全年覆盖的运时一律 start-uncertain），以及“流年-本命”“大运-本命”“流年-大运”的天干五合与相冲、地支冲合刑害与自刑、伏吟反吟；须岁运补齐（本命已完整的不重复列出）的三合、三刑、三会分为“大运-本命组合”（整步大运内都成立，不是当年新触发）与“流年参与组合”（须当年流年补齐）。`decade-N` 位置对应 `decades[]` 中同 index 的一步运，其 coverage 说明该步运在当年是否全年生效。天干冲只取甲庚、乙辛、丙壬、丁癸四冲，戊己居中不论冲。半合、破及寅巳、巳申的两两相刑未列入，需要时由宿主按传统表另行说明并标为宿主补充，不写成核心事实。引用这些关系时直接取此事实并纳入 bazi-timing 依据，不自行重算；未列出的组合不等于无作用，列出的组合也只说明关系出现，不说明合化成败、冲是否成立或现实结果。年内换运或起运不确定时，按各步运分别论证，不合并成单一大运。
+4. evidence v2 的 `.bazi.cycleRelations` 逐年给出立春区间、该流年内生效的大运（`decadeStatus`：single / switches-within-year / first-decade-starts-within-year / last-decade-ends-within-year / start-uncertain / before-first-decade / after-last-decade，及每步运的 coverage；起运为 range 且当年有非全年覆盖的运时一律 start-uncertain），以及“流年-本命”“大运-本命”“流年-大运”的天干五合与相冲、地支冲合刑害与自刑、伏吟反吟；须岁运补齐（本命已完整的不重复列出）的三合、三刑、三会分为“大运-本命组合”（整步大运内都成立，不是当年新触发）与“流年参与组合”（须当年流年补齐）。`decade-N` 位置对应 `decades[]` 中同 index 的一步运，其 coverage 说明该步运在当年是否全年生效。天干冲只取甲庚、乙辛、丙壬、丁癸四冲，戊己居中不论冲。地支成对关系含冲、六合、害、刑（子卯及寅巳申、丑戌未组内两两）、自刑、半合（含旺支）、拱合（生墓）与破；本命 relations 在 v2 使用同一张表并加三会。引用这些关系时直接取此事实并纳入 bazi-timing 依据，不自行重算；未列出的组合不等于无作用，列出的组合也只说明关系出现，不说明合化成败、冲是否成立或现实结果。年内换运或起运不确定时，按各步运分别论证，不合并成单一大运。
 
 ## 流月（仅月度 evidence）
 

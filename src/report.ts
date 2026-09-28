@@ -62,6 +62,7 @@ const BAZI_TOPIC_RULE_SUFFIXES: Record<
   pattern: [
     ".R-bazi-structure",
     ".R-bazi-wealth-review",
+    ".R-bazi-pattern-review",
     ".R-bazi-month-exposure",
   ],
   climate: [".R-bazi-structure"],
@@ -74,6 +75,7 @@ const BAZI_TOPIC_RULE_SUFFIXES: Record<
     ".R-bazi-structure",
     ".R-bazi-root-review",
     ".R-bazi-wealth-review",
+    ".R-bazi-pattern-review",
     ".R-bazi-month-exposure",
   ],
   "bazi-timing": [".R-bazi-timing"],
