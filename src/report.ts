@@ -4,6 +4,11 @@ import { isDeepStrictEqual } from "node:util";
 import { wealthReviewFacts, wealthReviewSummary } from "./rule-review.js";
 import { ziweiLayerFacts, describeLayerEntry } from "./ziwei-layer-review.js";
 import {
+  assertZiweiPalaceScope,
+  scopeForText,
+  ziweiScopes,
+} from "./ziwei-palace-scope.js";
+import {
   assertNoUnresolvedPremiseUpgrade,
   assertSafeReportText,
   requiredReasoningTopics,
@@ -1474,6 +1479,68 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
       throw new InputError(
         "FACT_MISMATCH",
         "报告的结构化事实断言与计算结果不一致",
+      );
+  }
+  if (r.schema === "whoami.report.v6") {
+    const scopes = ziweiScopes(evidence);
+    const ziweiHints = (factRefs: string[], links: ReasoningRef[]) => [
+      ...factRefs
+        .map((id) => factMap.get(id))
+        .filter((f) => f?.system === "ziwei")
+        .map((f) => f!.candidate),
+      ...links
+        .filter((l) => ZIWEI_TOPICS.includes(l.topic as ZiweiReasoning["topic"]))
+        .map((l) => l.candidate),
+    ];
+    // 多候选且线索不唯一的文本无法确定宫位归属，不做自动核对。
+    const checkTexts = (texts: string[], hints: string[], label: string) => {
+      const scope = scopeForText(scopes, hints);
+      if (scope)
+        for (const text of texts) assertZiweiPalaceScope(text, scope, label);
+    };
+    checkTexts([r.title as string, r.uncertainty as string], [], "report");
+    for (const section of r.sections as Report["sections"])
+      section.claims.forEach((claim, i) =>
+        checkTexts(
+          [claim.text, claim.conditions],
+          ziweiHints(claim.factRefs, claim.reasoningRefs),
+          `${section.id}.claims[${i}]`,
+        ),
+      );
+    const chainTexts = (chain?: {
+      crossLayerReview: string;
+      withdrawalConditions: string;
+      realityBasis: { summary: string };
+      missingLinks: string[];
+    }) =>
+      chain
+        ? [
+            chain.crossLayerReview,
+            chain.withdrawalConditions,
+            chain.realityBasis.summary,
+            ...chain.missingLinks,
+          ]
+        : [];
+    for (const item of [
+      ...(r.baziReasoning as BaziReasoning[]),
+      ...(ziweiReasoning as ZiweiReasoning[]),
+    ])
+      checkTexts(
+        [
+          item.conclusion,
+          item.counterReview,
+          item.conditions,
+          item.alternatives,
+          ...chainTexts(item.timingChain),
+        ],
+        [item.candidate],
+        `${item.topic}(${item.candidate})`,
+      );
+    for (const [i, item] of (r.crossSystem as Report["crossSystem"]).entries())
+      checkTexts(
+        [item.text],
+        ziweiHints(item.factRefs, item.reasoningRefs),
+        `crossSystem[${i}]`,
       );
   }
   return {
