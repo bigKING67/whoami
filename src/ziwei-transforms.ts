@@ -3,8 +3,19 @@ import type { Chart } from "./chart.js";
 type Ziwei = Chart["candidates"][number]["ziwei"];
 const MUTAGENS = ["禄", "权", "科", "忌"] as const;
 
-export function ziweiTransforms(z: Ziwei) {
-  const stars = z.palaces.flatMap(p =>
+/** 按星名定位本命物理宫；缺星、重名保持 missing-star / ambiguous-star，不取第一个。生年、运限、流月与飞化共用。 */
+type LocatorStar = { name: string; mutagen?: string };
+type LocatorPalace = {
+  index: number;
+  name: string;
+  branch: string;
+  majorStars: LocatorStar[];
+  minorStars: LocatorStar[];
+  adjectiveStars: LocatorStar[];
+};
+// 参数只取结构字段，不依赖 Chart 类型，chart.ts 构建流月时也能调用。
+export function starLocator(palaces: LocatorPalace[]) {
+  const stars = palaces.flatMap(p =>
     [...p.majorStars, ...p.minorStars, ...p.adjectiveStars].map(s => ({
       name: s.name, birthMutagen: s.mutagen,
       palaceIndex: p.index, natalPalace: p.name, branch: p.branch,
@@ -21,6 +32,11 @@ export function ziweiTransforms(z: Ziwei) {
       targets,
     };
   };
+  return { stars, locate };
+}
+
+export function ziweiTransforms(z: Ziwei) {
+  const { stars, locate } = starLocator(z.palaces);
   return {
     origin: MUTAGENS.map(mutagen => ({
       scope: "origin", mutagen,

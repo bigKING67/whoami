@@ -105,17 +105,33 @@ function pillarRelations(op: Located, other: Located, layer: CycleRelation["laye
   return out;
 }
 
+/** lunar-typescript 节气时刻按北京时间给出，统一转为绝对毫秒。 */
+const beijingMs = (solar: { toYmdHms(): string }) =>
+  Temporal.Instant.from(`${solar.toYmdHms().replace(" ", "T")}+08:00`).epochMilliseconds;
+
 const lichunCache = new Map<number, number>();
 const lichun = (lunarYear: number) => {
   let ms = lichunCache.get(lunarYear);
   if (ms === undefined) {
-    ms = Temporal.Instant.from(
-      `${Lunar.fromYmd(lunarYear, 1, 1).getJieQiTable()["立春"]!.toYmdHms().replace(" ", "T")}+08:00`,
-    ).epochMilliseconds;
+    ms = beijingMs(Lunar.fromYmd(lunarYear, 1, 1).getJieQiTable()["立春"]!);
     lichunCache.set(lunarYear, ms);
   }
   return ms;
 };
+
+/** 收集须由指定位置补齐的三合、三刑、三会，按组与位置去重；流年与流月共用。 */
+function groupCollector(relations: CycleRelation[]) {
+  const seen = new Set<string>();
+  const tables = [...BRANCH_GROUPS, ...SEASONAL_GROUPS];
+  return (members: Located[], required: string[], layer: CycleRelation["layer"]) => {
+    for (const g of completeBranchGroups(members, required, tables)) {
+      const key = `${g.kind}:${g.positions.join(",")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      relations.push({ layer, scope: "branch", kind: g.kind, positions: g.positions, value: g.branches });
+    }
+  };
+}
 
 const civil = (ms: number) =>
   Temporal.Instant.fromEpochMilliseconds(ms)
@@ -194,16 +210,7 @@ export function cycleRelations(bazi: Bazi) {
     ];
     // 三合、三刑、三会按“本命 + 每步可能生效的大运 (+ 流年)”分别检查，只保留须岁运补齐的完整组；
     // 不需要流年即成立的组记为“大运-本命组合”，避免把整步大运的组合误读为当年新触发。
-    const seen = new Set<string>();
-    const groupTables = [...BRANCH_GROUPS, ...SEASONAL_GROUPS];
-    const pushGroups = (members: Located[], required: string[], layer: CycleRelation["layer"]) => {
-      for (const g of completeBranchGroups(members, required, groupTables)) {
-        const key = `${g.kind}:${g.positions.join(",")}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        relations.push({ layer, scope: "branch", kind: g.kind, positions: g.positions, value: g.branches });
-      }
-    };
+    const pushGroups = groupCollector(relations);
     for (const op of operators) pushGroups([...natal, op], [op.position], "大运-本命组合");
     pushGroups([...natal, yearly], ["yearly"], "流年参与组合");
     for (const op of operators)
@@ -240,7 +247,7 @@ export function monthlyCycles(bazi: Bazi) {
       const lunar = probe.getLunar();
       const next = lunar.getNextJie(false);
       const nextJie = next.getSolar();
-      const end = Temporal.Instant.from(`${nextJie.toYmdHms().replace(" ", "T")}+08:00`).epochMilliseconds;
+      const end = beijingMs(nextJie);
       const pillar = lunar.getMonthInGanZhiExact();
       const decades = active(start, end, "month");
       const monthly: Located = { position: "monthly", stem: pillar[0]!, branch: pillar[1]! };
@@ -251,14 +258,9 @@ export function monthlyCycles(bazi: Bazi) {
         ...operators.flatMap((op) => pillarRelations(monthly, op, "流月-大运")),
       ];
       // 须由流月补齐的三合、三刑、三会（本命、流年、大运已完整的组不重复列出）。
-      const seen = new Set<string>();
+      const pushGroups = groupCollector(relations);
       for (const combo of operators.length ? operators.map((op) => [yearly, op]) : [[yearly]])
-        for (const g of completeBranchGroups([...natal, ...combo, monthly], ["monthly"], [...BRANCH_GROUPS, ...SEASONAL_GROUPS])) {
-          const key = `${g.kind}:${g.positions.join(",")}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          relations.push({ layer: "流月参与组合", scope: "branch", kind: g.kind, positions: g.positions, value: g.branches });
-        }
+        pushGroups([...natal, ...combo, monthly], ["monthly"], "流月参与组合");
       months.push({
         pillar,
         startJie,

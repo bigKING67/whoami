@@ -3,6 +3,7 @@ import { Temporal } from "@js-temporal/polyfill";
 import { Lunar, Solar } from "lunar-typescript";
 import iztro from "iztro";
 import { parseInput, type BirthInput, InputError } from "./input.js";
+import { starLocator } from "./ziwei-transforms.js";
 import { resolveBirth, timeAt, SOLAR_SCREENING_MINUTES } from "./time.js";
 
 export const ENGINE = {
@@ -197,10 +198,16 @@ export function ziweiAt(
  * 只补公历起止与四化落宫。另一派把整个闰月归上月，因此闰月两段均标 leapConvention。
  */
 function ziweiMonthly(c: ReturnType<typeof iztro.astro.bySolar>, years: number[]) {
-  const starPalaces = (star: string) =>
-    c.palaces
-      .filter((p) => [...p.majorStars, ...p.minorStars].some((s) => s.name === star))
-      .map((p) => p.index);
+  const { locate } = starLocator(
+    c.palaces.map((p) => ({
+      index: p.index,
+      name: p.name,
+      branch: p.earthlyBranch,
+      majorStars: p.majorStars,
+      minorStars: p.minorStars,
+      adjectiveStars: p.adjectiveStars,
+    })),
+  );
   const solarOf = (year: number, month: number, leap: boolean, day: number) =>
     Lunar.fromYmd(year, leap ? -month : month, day).getSolar();
   return years.flatMap((year) =>
@@ -225,12 +232,7 @@ function ziweiMonthly(c: ReturnType<typeof iztro.astro.bySolar>, years: number[]
         // 与流年四化一致：给出本命物理宫及其在当月承担的宫职。
         transformations: m.mutagen.map((star, i) => ({
           mutagen: "禄权科忌"[i]!,
-          star,
-          targets: starPalaces(star).map((index) => ({
-            palaceIndex: index,
-            natalPalace: c.palaces[index]!.name,
-            scopePalace: m.palaceNames[index] ?? null,
-          })),
+          ...locate(star, m.palaceNames),
         })),
         stars: (m.stars ?? []).flatMap((list, palaceIndex) =>
           list.map((st) => ({ name: st.name, palaceIndex })),

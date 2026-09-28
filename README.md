@@ -76,6 +76,8 @@ GitHub Actions 的 [CI 工作流](.github/workflows/ci.yml) 在 push、PR 或手
 ln -s /absolute/path/to/whoami ~/.codex/skills/whoami
 ```
 
+分发给其他机器时不必复制整个仓库：先 `npm run build`，再用 `npm run pack:skill -- <新目录>` 导出只含运行与重建所需文件的分发目录（约 1MB，不含测试、验收样例、质量记录与研究扫描件），在目标目录执行 `npm ci --omit=dev` 后即可使用。目标目录已存在时脚本拒绝覆盖。
+
 如果发现目录中已有同名路径，先检查并备份，不能用上述命令直接覆盖。旧 `bazi-ziwei` 应移到 `~/.codex/skills/` 之外的备份目录；回滚时删除 `whoami` 链接并把备份移回原位。安装后可运行 Skill 校验，并在新会话中确认选择器只显示 `whoami`。
 
 ## 来源与授权

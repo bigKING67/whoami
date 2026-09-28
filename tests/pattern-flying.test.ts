@@ -41,6 +41,11 @@ test("五格候选：入口按月支藏干十神，透干竞争与显干条件�
   assert.equal(check(killer, "seal").prerequisite, "observed");
   // 财透而食神不透：七煞逢财无制的显干前提出现。
   assert.equal(check(killer, "wealth-no-control").prerequisite, "observed");
+  // 食神格“食帶煞而無財”：财实际透出，mustBeAbsent.presentAt 列出透出位置，前提不成立。
+  const food = r.patterns.find((p) => p.id === "food")!;
+  const noWealth = check(food, "killer-no-wealth") as { prerequisite: string; mustBeAbsent?: { presentAt: { position: string }[] } };
+  assert.deepEqual(noWealth.mustBeAbsent!.presentAt.map((x) => x.position), ["year", "hour"]);
+  assert.equal(noWealth.prerequisite, "not-observed");
   assert.equal(check(killer, "food-control").prerequisite, "not-observed");
   assert(r.patterns.filter((p) => p.status === "outside-scope").every((p) => !p.checks.length));
   for (const p of r.patterns) for (const c of p.checks) assert(c.source.startsWith("https://donglishuzhai.net/chapter/") && c.quote.length > 0);

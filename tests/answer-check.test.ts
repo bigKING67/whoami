@@ -18,6 +18,11 @@ test("快速档答复通过条件性年度表达，拒绝高风险断言、细�
   assert.throws(() => checkAnswer("2026年一定会升职加薪。", e), code("UNSAFE_REPORT_CLAIM"));
   assert.throws(() => checkAnswer("2026年3月适合跳槽。", e), code("UNSUPPORTED_TIME_GRANULARITY"));
   assert.throws(() => checkAnswer("用神已经确定为水。", e), code("UNRESOLVED_PREMISE_CLAIM"));
+  // 格局只能确认候选入口；“财格成立/已成格”属未决升级，否定与条件句放行。
+  assert.throws(() => checkAnswer("你的八字是偏财格，财格成立。", e), code("UNRESOLVED_PREMISE_CLAIM"));
+  assert.throws(() => checkAnswer("七杀格已成格。", e), code("UNRESOLVED_PREMISE_CLAIM"));
+  for (const ok of ["只能确认财格候选入口，不确认成格。", "显干财印不相邻，也不证明财格成立。", "财格是否成立尚未裁定。"])
+    assert.equal(checkAnswer(ok, e).status, "valid", ok);
   assert.throws(() => checkAnswer("  ", e), code("INVALID_ANSWER"));
 });
 
@@ -43,6 +48,8 @@ test("确定性事业与人生事件断言被拦截，否定与条件表达放�
     assert.equal(findUnsafeReportClaim(text), null, text);
   assert.equal(findUnsafeReportClaim("不作他想地说注定离婚")?.category, "inevitable-relationship");
   assert.equal(findUnsafeReportClaim("你注定要发财")?.category, "guaranteed-event");
+  assert.equal(findUnsafeReportClaim("你一定能当领导")?.category, "guaranteed-event");
+  assert.equal(findUnsafeReportClaim("有当领导的可能，但取决于授权"), null);
   assert.equal(findUnsafeReportClaim("他必然要破产")?.category, "guaranteed-event");
   assert.equal(findUnsafeReportClaim("这很不给力，注定结婚")?.category, "guaranteed-event");
 });

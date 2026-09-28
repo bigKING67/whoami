@@ -99,3 +99,17 @@ test("流月标签：须写体系、同名流月须写年份、年份须匹配�
   const decade = contextFor(birth, [2020, 2025], undefined, "month");
   assert.throws(() => checkAnswer("八字流月壬午只作参考。", decade), code("AMBIGUOUS_MONTH_YEAR"));
 });
+
+test("紫微流月段首同样核对落宫与三方四正集合", () => {
+  const m = contextFor(birth, [2026], undefined, "month");
+  const z = buildChart(birth, [2026], "month").candidates[0]!.ziwei;
+  const month = z.monthly!.find((x) => x.stem + x.branch === "丁酉")!;
+  const anchor = z.palaces.find((p) => month.palaceNames[p.index] === "官禄")!;
+  const outside = z.palaces.find((p) => !anchor.surroundedIndices.includes(p.index))!;
+  const inside = z.palaces.find((p) => p.index === anchor.surroundedIndices[1])!;
+  const head = `2026年紫微流月丁酉（农历八月）的官禄落本命${anchor.name}（${anchor.branch}）`;
+  assert.equal(checkAnswer(`${head}，另连${inside.name}${inside.branch}。`, m).status, "valid");
+  assert.throws(() => checkAnswer(`${head}，另见${outside.name}${outside.branch}。`, m), code("PALACE_SCOPE_MISMATCH"));
+  const wrong = z.palaces.find((p) => p.index !== anchor.index)!;
+  assert.throws(() => checkAnswer(`2026年紫微流月丁酉的官禄落本命${wrong.name}（${wrong.branch}）。`, m), code("PALACE_SCOPE_MISMATCH"));
+});

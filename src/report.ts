@@ -522,13 +522,14 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
     const hasTopicEvidence = {
       strength:
         hasFact(".bazi.month") && hasFact(".bazi.rootDetails"),
-      pattern: hasFact(".bazi.monthExposure"),
+      pattern: hasFact(".bazi.monthExposure") || hasFact(".bazi.patternReview"),
       climate: hasFact(".bazi.month"),
       balance:
         hasFact(".bazi.rootDetails") || hasFact(".bazi.relations"),
       selection:
         hasFact(".bazi.monthExposure") ||
         hasFact(".bazi.wealthReview") ||
+        hasFact(".bazi.patternReview") ||
         hasFact(".bazi.rootDetails"),
       "bazi-timing": hasFact(".bazi.cycles"),
     }[typedTopic];

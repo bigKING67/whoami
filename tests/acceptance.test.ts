@@ -3015,3 +3015,35 @@ test("验收可绑定当前引擎的确定性 context error，并拒绝伪造错
     /声称计算失败/,
   );
 });
+
+test("验收按 context 记录的 evidence 版本与粒度重算：月度与 v1 均可复核，篡改粒度被拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "whoami-acceptance-granularity-"));
+  const artifact = (path: string, content: string) => {
+    writeFileSync(join(dir, path), content);
+    return { path, sha256: hash(content), bytes: Buffer.byteLength(content) };
+  };
+  const manifestWith = (name: string, context: unknown) => ({
+    schema: "whoami.acceptance-run.v1",
+    suiteId: `synthetic-${name}`,
+    skill: artifact("SKILL.md", "skill snapshot\n"),
+    task: artifact("task.md", "task snapshot\n"),
+    rubric: artifact("rubric.md", "rubric snapshot\n"),
+    cases: [{
+      id: "case-01",
+      input: artifact("input.json", json(birthInput)),
+      context: artifact(`${name}.json`, json(context)),
+      response: artifact("response.md", "response\n"),
+    }],
+    runtime: { provider: "codex", model: "UNVERIFIED", modelVersion: "UNVERIFIED", reasoningEffort: "UNVERIFIED", temperature: null, seed: null, receipt: null },
+    review: { status: "PASS", factErrors: 0, premiseOmissions: 0, candidateMixing: 0, unsupportedTimingClaims: 0, unsafeClaims: 0 },
+  });
+  const month = contextFor(birthInput, [2026], undefined, "month");
+  assert.equal(checkAcceptanceManifest(manifestWith("month", month), join(dir, "m1.json")).status, "partial");
+  const legacy = contextFor(birthInput, [2026], "whoami.evidence.v1");
+  assert.equal(checkAcceptanceManifest(manifestWith("legacy", legacy), join(dir, "m2.json")).status, "partial");
+  const { granularity: _dropped, ...claimsYear } = month;
+  assert.throws(
+    () => checkAcceptanceManifest(manifestWith("tampered", claimsYear), join(dir, "m3.json")),
+    (error: unknown) => error instanceof InputError && error.code === "ACCEPTANCE_CONTEXT_MISMATCH",
+  );
+});

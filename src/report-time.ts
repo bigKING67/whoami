@@ -657,7 +657,8 @@ export function validateReportTemporalText(
       throw new InputError("INVALID_NUMERIC_DATE", `${label} 使用了无效公历日期“${match[0]}”`);
   }
   // 月度只接受带体系与干支的流月标签，并须在 evidence 中真实存在；公历月、相对月仍按下方规则拒绝。
-  for (const month of monthlyLabelMentions(text)) {
+  // 与其他细分时间一致，只检查屏蔽了出生资料等非预测性说明后的文本。
+  for (const month of monthlyLabelMentions(granularityText)) {
     if (!context?.monthlyLabels)
       throw new InputError(
         "UNSUPPORTED_TIME_GRANULARITY",

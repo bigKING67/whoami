@@ -138,15 +138,16 @@ export function patternReview(bazi: Bazi) {
         checks: inScope
           ? pattern.checks.map((check) => {
               const groups = check.groups.map((gods) => ({ tenGods: gods, positions: at(gods) }));
-              const absent = check.absent ? { tenGods: check.absent, positions: at(check.absent) } : null;
-              const observed = groups.every((g) => g.positions.length) && (!absent || !absent.positions.length);
+              // presentAt 非空即表示“须不透”的十神实际透出，本项前提因此不成立。
+              const absent = check.absent ? { tenGods: check.absent, presentAt: at(check.absent) } : null;
+              const observed = groups.every((g) => g.positions.length) && (!absent || !absent.presentAt.length);
               return {
                 id: check.id,
                 category: check.category,
                 label: check.label,
                 prerequisite: observed ? ("observed" as const) : ("not-observed" as const),
                 groups,
-                ...(absent ? { absent } : {}),
+                ...(absent ? { mustBeAbsent: absent } : {}),
                 quote: check.quote,
                 source: check.source,
                 pending: check.pending,

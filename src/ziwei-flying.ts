@@ -1,5 +1,6 @@
 import iztro from "iztro";
 import type { ziweiAt } from "./chart.js";
+import { starLocator } from "./ziwei-transforms.js";
 
 type Ziwei = ReturnType<typeof ziweiAt>;
 const MUTAGENS = ["禄", "权", "科", "忌"] as const;
@@ -10,11 +11,7 @@ const MUTAGENS = ["禄", "权", "科", "忌"] as const;
  * 只列落点，不判吉凶；庚、戊、壬等干的四化星各派有异，本表只代表 iztro 口径。
  */
 export function ziweiFlyingTransforms(ziwei: Ziwei) {
-  const byStar = new Map<string, number[]>();
-  for (const p of ziwei.palaces)
-    for (const s of [...p.majorStars, ...p.minorStars])
-      byStar.set(s.name, [...(byStar.get(s.name) ?? []), p.index]);
-  const name = (index: number) => ziwei.palaces.find((p) => p.index === index)!.name;
+  const { locate } = starLocator(ziwei.palaces);
   const palaces = ziwei.palaces.map((p) => ({
     palaceIndex: p.index,
     palace: p.name,
@@ -22,16 +19,16 @@ export function ziweiFlyingTransforms(ziwei: Ziwei) {
     flights: iztro.util
       .getMutagensByHeavenlyStem(p.stem as Parameters<typeof iztro.util.getMutagensByHeavenlyStem>[0])
       .map((star, i) => {
-        const targets = byStar.get(star) ?? [];
+        const located = locate(star);
         return {
           mutagen: MUTAGENS[i]!,
           star,
-          // 星曜不在本命盘（如辅星未排入）时保留缺口，不补猜落点。
-          status: targets.length === 1 ? ("located" as const) : targets.length ? ("ambiguous" as const) : ("missing" as const),
-          targets: targets.map((t) => ({
-            palaceIndex: t,
-            palace: name(t),
-            kind: t === p.index ? ("self" as const) : t === (p.index + 6) % 12 ? ("opposite" as const) : ("other" as const),
+          // 星曜不在本命盘或重名时保留 missing-star / ambiguous-star，不补猜落点。
+          status: located.status,
+          targets: located.targets.map((t) => ({
+            palaceIndex: t.palaceIndex,
+            palace: t.natalPalace,
+            kind: t.palaceIndex === p.index ? ("self" as const) : t.palaceIndex === (p.index + 6) % 12 ? ("opposite" as const) : ("other" as const),
           })),
         };
       }),

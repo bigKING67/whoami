@@ -31,8 +31,10 @@ export type Rule = {
   source: string;
 };
 /**
- * v1 是历史冻结口径（无 cycleRelations），仅用于重算既有报告与验收样例；新 context 默认 v2。
- * 两版共有的事实与规则逐字节一致，v2 只新增岁运关系事实及其规则关联。
+ * v1 是历史冻结口径，仅用于重算既有报告与验收样例；新 context 默认 v2。
+ * v2 相对 v1：新增 cycleRelations、patternReview、flyingTransforms 事实与 R-bazi-pattern-review 规则，
+ * 本命 relations 扩展半合、拱合、破、两两相刑与三会（只增不删），R-bazi-timing 与 R-ziwei-transformations
+ * 的 factRefs、guidance 随之扩展；其余事实与规则逐字节一致。
  */
 export const EVIDENCE_SCHEMAS = ["whoami.evidence.v1", "whoami.evidence.v2"] as const;
 export type EvidenceSchema = (typeof EVIDENCE_SCHEMAS)[number];
