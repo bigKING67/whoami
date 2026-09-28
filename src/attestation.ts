@@ -88,56 +88,6 @@ export function runtimeAttestationPayload(value: {
   );
 }
 
-/**
- * v3 生成来源载荷：与 v2 绑定相同的 Skill、任务、量表与逐 case 产物，另绑定运行所在的源码提交
- * 与宿主事件流中实际出现的全部模型；不含 review——review 由维护者事后经单独的 CI 签发。
- */
-export function generationAttestationPayload(value: {
-  suiteId: string;
-  runId: string;
-  startedAt: string;
-  sourceCommit: string;
-  runtime: RuntimeIdentity;
-  observedModels: string[];
-  bindings: RuntimeBindings;
-  /** 各 case 宿主事件流的 SHA-256；运行时声明、模型列表与答复都由事件流推导。 */
-  eventLogs: { id: string; sha256: string }[];
-}) {
-  return Buffer.from(
-    canonicalJson({
-      schema: "whoami.generation-attestation.v1",
-      suiteId: value.suiteId,
-      runId: value.runId,
-      startedAt: value.startedAt,
-      sourceCommit: value.sourceCommit,
-      runtime: value.runtime,
-      observedModels: value.observedModels,
-      bindings: value.bindings,
-      eventLogs: value.eventLogs,
-    }),
-    "utf8",
-  );
-}
-
-/** v3 review 载荷：把维护者 review 绑定到一次已签发的生成载荷，签发后 review 不能再被改动。 */
-export function reviewAttestationPayload(value: {
-  suiteId: string;
-  generationPayloadSha256: string;
-  rubric: string;
-  review: AttestedReview;
-}) {
-  return Buffer.from(
-    canonicalJson({
-      schema: "whoami.review-attestation.v1",
-      suiteId: value.suiteId,
-      generationPayloadSha256: value.generationPayloadSha256,
-      rubric: value.rubric,
-      review: value.review,
-    }),
-    "utf8",
-  );
-}
-
 export function ed25519PublicKeyId(key: KeyObject) {
   const der = key.export({ format: "der", type: "spki" });
   return `ed25519:${createHash("sha256").update(der).digest("hex")}`;

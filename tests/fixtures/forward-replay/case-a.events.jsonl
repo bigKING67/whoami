@@ -1,3 +1,0 @@
-{"type": "system", "subtype": "init", "session_id": "replay", "model": "claude-sonnet-5", "claude_code_version": "9.9.9-replay", "tools": ["Read", "Bash"]}
-{"type": "assistant", "message": {"content": [{"type": "text", "text": "（回放）"}]}}
-{"type": "result", "subtype": "success", "is_error": false, "result": "按当前命盘，2027 年丁未流年只能给条件性判断：事业上可能是责任与协作并重的一年，是否有职位变化取决于现实条件，不宜据此断定升职。", "num_turns": 3}

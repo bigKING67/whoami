@@ -151,20 +151,6 @@ finalize 会重新生成请求、核对 payload 并验证签名，返回 `whoami
 
 受信宿主编排器须解码 `serializedReceipt.data`，核对 sha256/bytes，并用自身具备的目录句柄或事务性、不覆盖写入机制保存为 receipt；再把实际相对 path 与这里的 sha256/bytes 填入 `manifest.runtime.receipt`。最后运行 `acceptance-check --trusted-runtime-key ...`。文件落盘安全属于编排器边界；任何 artifact、review、runtime、request 或最终 receipt 漂移仍会被 whoami 拒绝。
 
-## CI 签发的生成与评审回执（v3）
-
-`whoami.runtime-receipt.v3` 由两个 GitHub Actions 工作流经 Sigstore 签发（设计见 [运行回执方案](../docs/research/runtime-attestation-sigstore.md)）：生成工作流签发 `whoami.generation-attestation.v1`（Skill、任务、量表、逐 case 产物与宿主事件流、运行时、源码提交与实际出现的模型；运行时、模型列表与答复均由事件流推导），review 工作流签发 `whoami.review-attestation.v1`（生成载荷摘要、量表与 review）。只有两份签发都有效、证书中的运行 ID 与源码提交与回执一致、review 为 PASS 时才是 `verified`；只有生成签发时结果为 `partial`。review 内容仍是维护者人工评审。核验时必须由核验者给出期望身份：
-
-```sh
-node dist/cli.js acceptance-check --manifest <out>/manifest.json \
-  --sigstore-repo bigKING67/whoami \
-  --sigstore-workflow bigKING67/whoami/.github/workflows/forward-attest.yml \
-  --sigstore-ref refs/heads/main \
-  --sigstore-review-workflow bigKING67/whoami/.github/workflows/forward-review.yml
-```
-
-验收器重算两份载荷并比对摘要，再调用 `gh attestation verify` 核对签名、证书链与工作流身份；缺少期望身份、签发无效、运行 ID 或源码提交不符、答复或运行时与事件流推导结果不符、清单 review 与签发不一致都拒绝；未给 `--sigstore-review-workflow` 时不核验 review 签发，结果为 partial；事件流中出现声明模型以外的模型时在结果中披露；gh 未登录、网络或超时报环境错误而非伪造。只有合成资料套件可以进入这些工作流。
-
 ## Codex 宿主证据边界
 
 维护者可运行 `npm run audit:codex-runtime` 对当前安装的 Codex CLI 做本地能力审计。命令只执行 `codex --version` 和 `codex app-server generate-json-schema --experimental`，不启动模型、不读认证信息、不发网络请求。输出的 `whoami.codex-runtime-evidence-audit.v1` 区分：

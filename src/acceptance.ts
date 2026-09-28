@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { InputError, object } from "./input.js";
 import { buildChart } from "./chart.js";
 import { buildEvidence, isEvidenceSchema } from "./evidence.js";
 import { contextErrorOutcome } from "./outcome.js";
-import { deriveHostRun, hostRuntime } from "./host-events.js";
 import { validateReport } from "./report.js";
 import type { Evidence } from "./evidence.js";
 import type { Report } from "./report.js";
@@ -19,71 +16,11 @@ import {
 } from "./report-safety.js";
 import {
   decodeCanonicalBase64,
-  generationAttestationPayload,
-  reviewAttestationPayload,
   readTrustedEd25519PublicKey,
   runtimeAttestationPayload,
   verifyEd25519Attestation,
 } from "./attestation.js";
 import { Temporal } from "@js-temporal/polyfill";
-
-export type SigstoreIdentity = {
-  repo: string;
-  /** 生成工作流，如 owner/repo/.github/workflows/forward-attest.yml */
-  signerWorkflow: string;
-  sourceRef: string;
-  /** review 签发工作流；不提供时 v3 结果不能升级为 verified。 */
-  reviewWorkflow?: string;
-};
-type SigstoreCheck = { repo: string; signerWorkflow: string; sourceRef: string };
-export type SigstoreResult = { verified: boolean; runId: string | null; sourceDigest: string | null; detail?: string };
-type SigstoreVerifier = (payload: Buffer, bundlePath: string, identity: SigstoreCheck) => SigstoreResult;
-
-/**
- * 用 gh CLI 在线核验 GitHub artifact attestation，并取出证书中的运行 ID 与源码提交摘要供交叉比对。
- * 签发无效返回 verified=false；gh 缺失、未登录、网络或超时等环境问题抛出，不误报为伪造。
- */
-function verifyWithGhAttestation(payload: Buffer, bundlePath: string, identity: SigstoreCheck): SigstoreResult {
-  const dir = mkdtempSync(join(tmpdir(), "whoami-attest-"));
-  const payloadPath = join(dir, "payload.bin");
-  writeFileSync(payloadPath, payload);
-  try {
-    const stdout = execFileSync(
-      "gh",
-      [
-        "attestation", "verify", payloadPath,
-        "--bundle", bundlePath,
-        "--repo", identity.repo,
-        "--signer-workflow", identity.signerWorkflow,
-        "--source-ref", identity.sourceRef,
-        "--format", "json",
-      ],
-      { stdio: "pipe", timeout: 120_000, encoding: "utf8" },
-    );
-    const results = JSON.parse(stdout) as {
-      verificationResult?: { signature?: { certificate?: { runInvocationURI?: string; sourceRepositoryDigest?: string } } };
-    }[];
-    const cert = results[0]?.verificationResult?.signature?.certificate;
-    return {
-      verified: Boolean(cert),
-      runId: cert?.runInvocationURI?.match(/\/runs\/([^/]+)/u)?.[1] ?? null,
-      sourceDigest: cert?.sourceRepositoryDigest ?? null,
-    };
-  } catch (error) {
-    const e = error as NodeJS.ErrnoException & { stderr?: string; signal?: string };
-    if (e.code === "ENOENT")
-      throw new InputError("INVALID_ACCEPTANCE_RECEIPT", "v3 runtime receipt 核验需要 gh CLI");
-    // 保留末尾（真正的错误在 gh 的 Loaded… 前言之后）。网络、TUF、登录、超时一律视为环境问题。
-    const stderr = String(e.stderr ?? e.message ?? "").trim().slice(-400);
-    const environmental = /dial tcp|timeout|timed out|TUF|trusted root|network|connection|no such host|auth|login|token|rate limit|unknown flag/iu.test(stderr);
-    const signatureFailure = /no matching attestations|verification failed|failed to verify|does not match|mismatch|certificate identity/iu.test(stderr);
-    if (e.signal === "SIGTERM" || e.code === "ETIMEDOUT" || environmental || !signatureFailure)
-      throw new InputError("INVALID_ACCEPTANCE_RECEIPT", `Sigstore 核验未能完成（环境、登录或网络问题），不代表签发无效：${stderr}`);
-    return { verified: false, runId: null, sourceDigest: null, detail: stderr };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
 
 type Artifact = {
   path: string;
@@ -495,7 +432,7 @@ function verifyContextBinding(
     );
 }
 
-export function verifyReview(raw: unknown) {
+function verifyReview(raw: unknown) {
   const review = object(raw, "review");
   if (
     typeof review.status !== "string" ||
@@ -534,12 +471,7 @@ export function verifyReview(raw: unknown) {
 export function checkAcceptanceManifest(
   raw: unknown,
   manifestPath: string,
-  options: {
-    trustedRuntimeKeyPath?: string;
-    trustedSigstoreIdentity?: SigstoreIdentity;
-    /** 测试可注入；默认调用 gh attestation verify。 */
-    sigstoreVerifier?: SigstoreVerifier;
-  } = {},
+  options: { trustedRuntimeKeyPath?: string } = {},
 ) {
   const manifest = object(raw, "acceptance manifest");
   if (manifest.schema !== "whoami.acceptance-run.v1")
@@ -630,9 +562,6 @@ export function checkAcceptanceManifest(
       : verifyArtifact(runtime.receipt, baseDir, "runtime.receipt");
   let runtimeAttested = false;
   let runtimeKeyId: string | null = null;
-  // v2 签名同时覆盖 review；v3 的 review 须由单独的 CI 工作流签发。
-  let reviewIndependent = true;
-  let extraModels: string[] = [];
   if (receipt) {
     let rawReceipt: unknown;
     try {
@@ -646,8 +575,7 @@ export function checkAcceptanceManifest(
     const parsed = object(rawReceipt, "runtime receipt");
     if (
       parsed.schema !== "whoami.runtime-receipt.v1" &&
-      parsed.schema !== "whoami.runtime-receipt.v2" &&
-      parsed.schema !== "whoami.runtime-receipt.v3"
+      parsed.schema !== "whoami.runtime-receipt.v2"
     )
       throw new InputError(
         "INVALID_ACCEPTANCE_RECEIPT",
@@ -740,85 +668,6 @@ export function checkAcceptanceManifest(
         "ACCEPTANCE_RECEIPT_MISMATCH",
         "runtime receipt 未绑定本次 Skill、任务、输入、context、回答、可选报告及结构化答复绑定",
       );
-    if (parsed.schema === "whoami.runtime-receipt.v3") {
-      if (nonEmpty(bindings.rubric, "runtime receipt.bindings.rubric") !== rubric.sha256)
-        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt 未绑定本次评审量表");
-      // 期望签发身份只能由核验者指定，不能由清单或回执自带。
-      const identity = options.trustedSigstoreIdentity;
-      if (!identity)
-        throw new InputError(
-          "INVALID_ACCEPTANCE_RECEIPT",
-          "v3 runtime receipt 需要 --sigstore-repo、--sigstore-workflow 与 --sigstore-ref 指定期望的签发身份",
-        );
-      const verify = options.sigstoreVerifier ?? verifyWithGhAttestation;
-      const sourceCommit = nonEmpty(parsed.sourceCommit, "runtime receipt.sourceCommit");
-      // 运行时声明、模型列表与答复都从宿主事件流重新推导，不信任回执或清单中的同名字段。
-      if (!Array.isArray(parsed.eventLogs) || parsed.eventLogs.length !== cases.length)
-        throw new InputError("INVALID_ACCEPTANCE_RECEIPT", "runtime receipt.eventLogs 须与 case 一一对应");
-      const eventLogs = parsed.eventLogs.map((raw, i) => {
-        const log = verifyArtifact(raw, baseDir, `runtime receipt.eventLogs[${i}]`);
-        if (nonEmpty((raw as { id?: unknown }).id, `runtime receipt.eventLogs[${i}].id`) !== cases[i]!.id)
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt.eventLogs 的顺序或 id 与 case 不一致");
-        const run = deriveHostRun(readFileSync(log.resolvedPath, "utf8"), cases[i]!.id);
-        if (run.response !== readFileSync(cases[i]!.response.resolvedPath, "utf8"))
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", `${cases[i]!.id} 的答复与宿主事件流中的最终结果不一致`);
-        return { id: cases[i]!.id, sha256: log.sha256, run };
-      });
-      const derived = hostRuntime(eventLogs.map((l) => l.run));
-      if (!isDeepStrictEqual(derived.runtime, boundRuntime))
-        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "运行时声明与宿主事件流推导结果不一致");
-      if (!isDeepStrictEqual(parsed.observedModels, derived.observedModels))
-        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt.observedModels 与宿主事件流推导结果不一致");
-      const observedModels = derived.observedModels;
-      extraModels = observedModels.filter((m) => m !== boundRuntime.model);
-      const generationPayload = generationAttestationPayload({
-        suiteId,
-        runId,
-        startedAt,
-        sourceCommit,
-        runtime: boundRuntime,
-        observedModels,
-        bindings: {
-          skill: expectedBindings.skill,
-          task: expectedBindings.task,
-          rubric: rubric.sha256,
-          cases: expectedBindings.cases,
-        },
-        eventLogs: eventLogs.map(({ id, sha256 }) => ({ id, sha256 })),
-      });
-      const generationSha = createHash("sha256").update(generationPayload).digest("hex");
-      if (nonEmpty(parsed.payloadSha256, "runtime receipt.payloadSha256") !== generationSha)
-        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt 的 payloadSha256 与本次产物重算结果不一致");
-      // 证书中的运行 ID 与源码提交须与回执一致，旧运行或其他提交的签发不能冒用。
-      const checkSigstore = (payload: Buffer, rawBundle: unknown, label: string, workflow: string, expectRun: string, expectCommit: string | null) => {
-        const bundle = verifyArtifact(rawBundle, baseDir, `${label}.sigstoreBundle`);
-        const result = verify(payload, bundle.resolvedPath, { repo: identity.repo, signerWorkflow: workflow, sourceRef: identity.sourceRef });
-        if (!result.verified)
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", `${label} 的 Sigstore 签发无效或身份不符${result.detail ? `：${result.detail}` : ""}`);
-        if (result.runId !== expectRun)
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", `${label} 证书中的运行 ID 与回执不一致`);
-        if (expectCommit !== null && result.sourceDigest !== expectCommit)
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", `${label} 证书中的源码提交与回执不一致`);
-      };
-      checkSigstore(generationPayload, parsed.sigstoreBundle, "runtime receipt", identity.signerWorkflow, runId, sourceCommit);
-      runtimeAttested = true;
-      runtimeKeyId = `sigstore:${identity.signerWorkflow}@${identity.sourceRef}`;
-      reviewIndependent = false;
-      // 未指定期望的 review 工作流时不核验 review 签发，结果保持 partial。
-      if (parsed.review !== undefined && parsed.review !== null && identity.reviewWorkflow) {
-        const review = object(parsed.review, "runtime receipt.review");
-        const reviewPayload = reviewAttestationPayload({
-          suiteId,
-          generationPayloadSha256: generationSha,
-          rubric: rubric.sha256,
-          review: { status: reviewStatus, ...counts },
-        });
-        if (nonEmpty(review.payloadSha256, "runtime receipt.review.payloadSha256") !== createHash("sha256").update(reviewPayload).digest("hex"))
-          throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "清单中的 review 与已签发的 review 不一致");
-        checkSigstore(reviewPayload, review.sigstoreBundle, "runtime receipt.review", identity.reviewWorkflow!, nonEmpty(review.runId, "runtime receipt.review.runId"), null);
-        reviewIndependent = true;
-      }
-    }
     if (parsed.schema === "whoami.runtime-receipt.v2") {
       if (
         nonEmpty(bindings.rubric, "runtime receipt.bindings.rubric") !==
@@ -894,11 +743,10 @@ export function checkAcceptanceManifest(
   // v1 proves artifact/metadata binding only. v2 additionally requires an
   // external trust root selected by the verifier.
   const runtimeVerified = runtimeBound && runtimeAttested;
-  // v3 还要求 review 经 CI 签发；未签发的 review 可被任意改写，不能支撑 verified。
   const status =
     reviewStatus === "FAIL"
       ? "failed"
-      : reviewStatus === "PASS" && runtimeVerified && reviewIndependent
+      : reviewStatus === "PASS" && runtimeVerified
         ? "verified"
         : "partial";
   return {
@@ -937,15 +785,6 @@ export function checkAcceptanceManifest(
       ...(runtimeAttested
         ? []
         : ["运行身份未获独立证明，结果不能升级为 verified。"]),
-      ...(runtimeAttested && !reviewIndependent
-        ? ["v3 回执只证明生成来源；review 未经 CI 签发，可被改写，结果不能升级为 verified。"]
-        : []),
-      ...(extraModels.length
-        ? [`宿主事件流中除声明模型外还出现了 ${extraModels.join("、")}，答复可能有其他模型参与。`]
-        : []),
-      ...(receipt && runtimeAttested && reviewIndependent && runtimeKeyId?.startsWith("sigstore:")
-        ? ["review 经 CI 签发后不可改写，但内容仍是维护者人工评审，不是独立第三方评审。"]
-        : []),
       "验收只评价给定样例的事实忠实与推理合同，不证明现实预测有效。",
     ],
     bindings: {

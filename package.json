@@ -13,7 +13,7 @@
     "cli": "tsx src/cli.ts",
     "blind-review:adjudicate": "tsx scripts/adjudicate-bazi-timing-blind-review.ts",
     "audit:codex-runtime": "tsx scripts/audit-codex-runtime-evidence.ts",
-    "check": "npm run typecheck && npm run build && npm test",
+    "check": "npm run typecheck && npm test && npm run build",
     "pack:skill": "node scripts/pack-skill.mjs"
   },
   "dependencies": {
