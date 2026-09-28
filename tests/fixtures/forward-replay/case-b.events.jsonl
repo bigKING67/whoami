@@ -1,0 +1,3 @@
+{"type": "system", "subtype": "init", "session_id": "replay", "model": "claude-sonnet-5", "claude_code_version": "9.9.9-replay", "tools": ["Read", "Bash"]}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "（回放）"}]}}
+{"type": "result", "subtype": "success", "is_error": false, "result": "2027 年的事业只能作条件性参考：流年与大运的组合提示需要核对授权与资源，结论取决于现实岗位条件，不能推出确定的升迁或收入变化。", "num_turns": 3}

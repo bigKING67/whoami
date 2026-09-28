@@ -88,6 +88,30 @@ export function runtimeAttestationPayload(value: {
   );
 }
 
+/**
+ * v3 生成来源载荷：与 v2 绑定相同的 Skill、任务、量表与逐 case 产物，但不含 review——
+ * 签发发生在 CI 运行内，review 由维护者事后完成，不能被同一签名覆盖。
+ */
+export function generationAttestationPayload(value: {
+  suiteId: string;
+  runId: string;
+  startedAt: string;
+  runtime: RuntimeIdentity;
+  bindings: RuntimeBindings;
+}) {
+  return Buffer.from(
+    canonicalJson({
+      schema: "whoami.generation-attestation.v1",
+      suiteId: value.suiteId,
+      runId: value.runId,
+      startedAt: value.startedAt,
+      runtime: value.runtime,
+      bindings: value.bindings,
+    }),
+    "utf8",
+  );
+}
+
 export function ed25519PublicKeyId(key: KeyObject) {
   const der = key.export({ format: "der", type: "spki" });
   return `ed25519:${createHash("sha256").update(der).digest("hex")}`;

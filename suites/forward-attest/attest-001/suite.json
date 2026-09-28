@@ -1,0 +1,14 @@
+{
+  "schema": "whoami.forward-suite.v1",
+  "id": "attest-001",
+  "synthetic": true,
+  "years": [2027],
+  "task": "task.md",
+  "rubric": "rubric.md",
+  "model": "claude-sonnet-5",
+  "maxTurns": 20,
+  "cases": [
+    { "id": "case-a", "input": "case-a.json" },
+    { "id": "case-b", "input": "case-b.json" }
+  ]
+}

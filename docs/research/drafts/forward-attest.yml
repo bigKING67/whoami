@@ -1,0 +1,66 @@
+# 草稿：真实宿主前向验收与 Sigstore 签发。设计见 ../runtime-attestation-sigstore.md。
+# 放在 docs/ 下不会被 GitHub Actions 加载；在仓库 Settings → Environments 建好 forward-attest
+# （必需审批人 + ANTHROPIC_API_KEY secret）后，再移入 .github/workflows/forward-attest.yml。
+# 只能运行 suites/forward-attest 下 synthetic:true 的合成资料：日志、产物与 Rekor 记录均公开。
+name: Forward attest
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "suites/forward-attest 下的套件 id，如 attest-001"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: forward-attest
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run host and attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Environment 须设必需审批人；API key 只作为该 Environment 的 secret 暴露给本 job。
+    environment: forward-attest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Install locked dependencies and build
+        run: npm ci --ignore-scripts && npm run build
+      - name: Install Claude Code (pinned)
+        run: npm install --global --ignore-scripts @anthropic-ai/claude-code@2.1.283
+      - name: Run suite
+        env:
+          SUITE: ${{ inputs.suite }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          case "$SUITE" in *[!a-z0-9-]*|"") echo "非法套件 id" && exit 1;; esac
+          node scripts/forward-run.mjs --suite "suites/forward-attest/$SUITE" --out out --host claude
+      - name: Attest generation payload
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/payload.bin
+      - name: Attach bundle to receipt
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: node scripts/forward-run.mjs --finalize out --bundle "$BUNDLE"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forward-attest-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error

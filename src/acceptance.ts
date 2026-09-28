@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { InputError, object } from "./input.js";
 import { buildChart } from "./chart.js";
@@ -16,11 +18,43 @@ import {
 } from "./report-safety.js";
 import {
   decodeCanonicalBase64,
+  generationAttestationPayload,
   readTrustedEd25519PublicKey,
   runtimeAttestationPayload,
   verifyEd25519Attestation,
 } from "./attestation.js";
 import { Temporal } from "@js-temporal/polyfill";
+
+export type SigstoreIdentity = { repo: string; signerWorkflow: string; sourceRef: string };
+type SigstoreVerifier = (payload: Buffer, bundlePath: string, identity: SigstoreIdentity) => boolean;
+
+/** 用 gh CLI 在线核验 GitHub artifact attestation：签名、证书链与签发工作流身份均须匹配。 */
+function verifyWithGhAttestation(payload: Buffer, bundlePath: string, identity: SigstoreIdentity) {
+  const dir = mkdtempSync(join(tmpdir(), "whoami-attest-"));
+  const payloadPath = join(dir, "payload.bin");
+  writeFileSync(payloadPath, payload);
+  try {
+    execFileSync(
+      "gh",
+      [
+        "attestation", "verify", payloadPath,
+        "--bundle", bundlePath,
+        "--repo", identity.repo,
+        "--signer-workflow", identity.signerWorkflow,
+        "--source-ref", identity.sourceRef,
+        "--format", "json",
+      ],
+      { stdio: "pipe" },
+    );
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new InputError("INVALID_ACCEPTANCE_RECEIPT", "v3 runtime receipt 核验需要 gh CLI");
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 type Artifact = {
   path: string;
@@ -471,7 +505,12 @@ function verifyReview(raw: unknown) {
 export function checkAcceptanceManifest(
   raw: unknown,
   manifestPath: string,
-  options: { trustedRuntimeKeyPath?: string } = {},
+  options: {
+    trustedRuntimeKeyPath?: string;
+    trustedSigstoreIdentity?: SigstoreIdentity;
+    /** 测试可注入；默认调用 gh attestation verify。 */
+    sigstoreVerifier?: SigstoreVerifier;
+  } = {},
 ) {
   const manifest = object(raw, "acceptance manifest");
   if (manifest.schema !== "whoami.acceptance-run.v1")
@@ -562,6 +601,8 @@ export function checkAcceptanceManifest(
       : verifyArtifact(runtime.receipt, baseDir, "runtime.receipt");
   let runtimeAttested = false;
   let runtimeKeyId: string | null = null;
+  // v2 签名同时覆盖 review；v3 只签生成来源，review 为维护者事后评审。
+  let reviewIndependent = true;
   if (receipt) {
     let rawReceipt: unknown;
     try {
@@ -575,7 +616,8 @@ export function checkAcceptanceManifest(
     const parsed = object(rawReceipt, "runtime receipt");
     if (
       parsed.schema !== "whoami.runtime-receipt.v1" &&
-      parsed.schema !== "whoami.runtime-receipt.v2"
+      parsed.schema !== "whoami.runtime-receipt.v2" &&
+      parsed.schema !== "whoami.runtime-receipt.v3"
     )
       throw new InputError(
         "INVALID_ACCEPTANCE_RECEIPT",
@@ -668,6 +710,38 @@ export function checkAcceptanceManifest(
         "ACCEPTANCE_RECEIPT_MISMATCH",
         "runtime receipt 未绑定本次 Skill、任务、输入、context、回答、可选报告及结构化答复绑定",
       );
+    if (parsed.schema === "whoami.runtime-receipt.v3") {
+      if (nonEmpty(bindings.rubric, "runtime receipt.bindings.rubric") !== rubric.sha256)
+        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt 未绑定本次评审量表");
+      // 期望签发身份只能由核验者指定，不能由清单或回执自带。
+      const identity = options.trustedSigstoreIdentity;
+      if (!identity)
+        throw new InputError(
+          "INVALID_ACCEPTANCE_RECEIPT",
+          "v3 runtime receipt 需要 --trusted-sigstore-identity 指定期望的仓库、签发工作流与 ref",
+        );
+      const bundle = verifyArtifact(parsed.sigstoreBundle, baseDir, "runtime receipt.sigstoreBundle");
+      const payload = generationAttestationPayload({
+        suiteId,
+        runId,
+        startedAt,
+        runtime: boundRuntime,
+        bindings: {
+          skill: expectedBindings.skill,
+          task: expectedBindings.task,
+          rubric: rubric.sha256,
+          cases: expectedBindings.cases,
+        },
+      });
+      if (nonEmpty(parsed.payloadSha256, "runtime receipt.payloadSha256") !== createHash("sha256").update(payload).digest("hex"))
+        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "runtime receipt 的 payloadSha256 与本次产物重算结果不一致");
+      const verify = options.sigstoreVerifier ?? verifyWithGhAttestation;
+      if (!verify(payload, bundle.resolvedPath, identity))
+        throw new InputError("ACCEPTANCE_RECEIPT_MISMATCH", "Sigstore 签发无效，或签发身份与期望的仓库、工作流、ref 不一致");
+      runtimeAttested = true;
+      runtimeKeyId = `sigstore:${identity.signerWorkflow}@${identity.sourceRef}`;
+      reviewIndependent = false;
+    }
     if (parsed.schema === "whoami.runtime-receipt.v2") {
       if (
         nonEmpty(bindings.rubric, "runtime receipt.bindings.rubric") !==
@@ -785,6 +859,9 @@ export function checkAcceptanceManifest(
       ...(runtimeAttested
         ? []
         : ["运行身份未获独立证明，结果不能升级为 verified。"]),
+      ...(runtimeAttested && !reviewIndependent
+        ? ["v3 回执只证明生成来源；review 为维护者事后评审，未经独立签发。"]
+        : []),
       "验收只评价给定样例的事实忠实与推理合同，不证明现实预测有效。",
     ],
     bindings: {
