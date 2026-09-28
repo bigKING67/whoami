@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 导出只含运行所需文件的 skill 分发目录；验收样例、质量记录、测试与研究扫描件留在仓库。
 // 用法：npm run pack:skill -- <目标目录>（目标须不存在，不覆盖）。
+import { execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,10 +17,8 @@ if (existsSync(out)) {
   console.error(`目标已存在，不覆盖：${out}`);
   process.exit(1);
 }
-if (!existsSync(join(root, "dist/cli.js"))) {
-  console.error("缺少 dist/，请先运行 npm run build");
-  process.exit(1);
-}
+// 先按当前 src 重新构建，避免把过期的 dist 打进包里。
+execSync("npm run build", { cwd: root, stdio: "inherit" });
 
 const include = [
   "SKILL.md",
@@ -41,6 +40,12 @@ const include = [
     .map((name) => `docs/research/${name}`),
 ];
 
+// 全部清单项存在后才创建目标目录，失败时不留下半成品。
+const missing = include.filter((rel) => !existsSync(join(root, rel)));
+if (missing.length) {
+  console.error(`缺少文件：${missing.join("、")}`);
+  process.exit(1);
+}
 mkdirSync(out, { recursive: true });
 let bytes = 0;
 const walk = (path) =>
@@ -49,10 +54,6 @@ const walk = (path) =>
     : statSync(path).size;
 for (const rel of include) {
   const from = join(root, rel);
-  if (!existsSync(from)) {
-    console.error(`缺少文件：${rel}`);
-    process.exit(1);
-  }
   mkdirSync(dirname(join(out, rel)), { recursive: true });
   cpSync(from, join(out, rel), { recursive: true });
   bytes += walk(from);

@@ -5,7 +5,7 @@ import type { Evidence } from "./evidence.js";
 type Ziwei = ReturnType<typeof ziweiAt>;
 type Palace = Ziwei["palaces"][number];
 type Yearly = Ziwei["yearly"];
-type Monthly = { year: number; stem: string; branch: string; palaceNames: string[] }[];
+type Monthly = NonNullable<Ziwei["monthly"]>;
 export type ZiweiScope = { palaces: Palace[]; yearly: Yearly; monthly?: Monthly };
 
 export const isZiweiPalaceFactId = (id: string) => /\.ziwei\.palace-\d+$/u.test(id);

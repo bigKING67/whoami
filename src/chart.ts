@@ -132,6 +132,23 @@ export function ziweiAt(
     brightness: s.brightness ?? "",
     mutagen: s.mutagen ?? "",
   });
+  const palaces = c.palaces.map((p) => ({
+    index: p.index,
+    name: p.name,
+    stem: p.heavenlyStem,
+    branch: p.earthlyBranch,
+    isBodyPalace: p.isBodyPalace,
+    majorStars: p.majorStars.map(star),
+    minorStars: p.minorStars.map(star),
+    adjectiveStars: p.adjectiveStars.map(star),
+    decadal: p.decadal,
+    surroundedIndices: [
+      p.index,
+      (p.index + 4) % 12,
+      (p.index + 8) % 12,
+      (p.index + 6) % 12,
+    ],
+  }));
   return {
     settings: {
       ...settings,
@@ -147,23 +164,7 @@ export function ziweiAt(
     soul: c.soul,
     body: c.body,
     fiveElementsClass: c.fiveElementsClass,
-    palaces: c.palaces.map((p) => ({
-      index: p.index,
-      name: p.name,
-      stem: p.heavenlyStem,
-      branch: p.earthlyBranch,
-      isBodyPalace: p.isBodyPalace,
-      majorStars: p.majorStars.map(star),
-      minorStars: p.minorStars.map(star),
-      adjectiveStars: p.adjectiveStars.map(star),
-      decadal: p.decadal,
-      surroundedIndices: [
-        p.index,
-        (p.index + 4) % 12,
-        (p.index + 8) % 12,
-        (p.index + 6) % 12,
-      ],
-    })),
+    palaces,
     decadals: c
       .decadalList()
       .map((d) => ({
@@ -189,7 +190,7 @@ export function ziweiAt(
           decadalPalaceIndex: h.decadal.index,
         };
       }),
-    ...(granularity === "month" ? { monthly: ziweiMonthly(c, years.filter((y) => y >= birthLunarYear)) } : {}),
+    ...(granularity === "month" ? { monthly: ziweiMonthly(c, palaces, years.filter((y) => y >= birthLunarYear)) } : {}),
   };
 }
 
@@ -197,17 +198,13 @@ export function ziweiAt(
  * 紫微流月直接取 iztro monthlyList（fixLeap=true：闰月 1–15 日归上月、16 日起归下月），
  * 只补公历起止与四化落宫。另一派把整个闰月归上月，因此闰月两段均标 leapConvention。
  */
-function ziweiMonthly(c: ReturnType<typeof iztro.astro.bySolar>, years: number[]) {
-  const { locate } = starLocator(
-    c.palaces.map((p) => ({
-      index: p.index,
-      name: p.name,
-      branch: p.earthlyBranch,
-      majorStars: p.majorStars,
-      minorStars: p.minorStars,
-      adjectiveStars: p.adjectiveStars,
-    })),
-  );
+function ziweiMonthly(
+  c: ReturnType<typeof iztro.astro.bySolar>,
+  palaces: Parameters<typeof starLocator>[0],
+  years: number[],
+) {
+  // 复用 ziweiAt 已规范化的宫位，保证流月定位与生年、运限四化口径一致。
+  const { locate } = starLocator(palaces);
   const solarOf = (year: number, month: number, leap: boolean, day: number) =>
     Lunar.fromYmd(year, leap ? -month : month, day).getSolar();
   return years.flatMap((year) =>

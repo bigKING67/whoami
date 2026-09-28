@@ -1137,7 +1137,9 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           "MISSING_REASONING_LINK",
           `${label} 引用了紫微流月事实，但未绑定该候选的 ziwei-timing 论证`,
         );
-    const mentionedSystems = new Set(monthlyLabelMentions(text).map((m) => m.system));
+    const mentionedSystems = new Set(
+      monthlyLabelMentions(text, { role: "prose", birth: evidence.input }, label).map((m) => m.system),
+    );
     for (const [system, key] of [["八字", ".bazi.monthlyCycles"], ["紫微", ".ziwei.monthly"]] as const)
       if (mentionedSystems.has(system) && !factRefs.some((id) => id.endsWith(key)))
         throw new InputError(

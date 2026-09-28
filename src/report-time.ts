@@ -18,9 +18,13 @@ const NAMED_CALENDAR_POINT_PATTERN =
   /(?:(?:今年|本年|明年|后年|去年|前年|(?:19|20)\d{2}\s*年?)(?:春节|农历新年|立春|雨水|惊蛰|春分|清明|谷雨|立夏|小满|芒种|夏至|小暑|大暑|立秋|处暑|白露|秋分|寒露|霜降|立冬|小雪|大雪|冬至|小寒|大寒))|(?:(?:春节|农历新年|立春|雨水|惊蛰|春分|清明|谷雨|立夏|小满|芒种|夏至|小暑|大暑|立秋|处暑|白露|秋分|寒露|霜降|立冬|小雪|大雪|冬至|小寒|大寒)(?:当天|当日|那天|之日|适合|会|能|是否|如何|怎么样|怎么))/u;
 const MONTHLY_LABEL_PATTERN =
   /(?:((?:19|20)\d{2})\s*年?\s*(?:的)?\s*)?(八字|紫微)?\s*流月\s*([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])(?:\s*[（(]([^）)]*)[）)])?/gu;
-/** 文本中的流月标签：可选年份前缀、体系、干支与括号起止说明。报告绑定与时间门禁共用。 */
-export function monthlyLabelMentions(text: string) {
-  return [...text.matchAll(MONTHLY_LABEL_PATTERN)].map((m) => ({
+/**
+ * 文本中的流月标签：可选年份前缀、体系、干支与括号起止说明。报告绑定与时间门禁共用；
+ * 传入 context 时与时间门禁一致，先屏蔽出生资料等非预测性说明。
+ */
+export function monthlyLabelMentions(text: string, context?: TemporalTextContext, label = "text") {
+  const scanned = context ? nonPredictiveText(text, context, label) : text;
+  return [...scanned.matchAll(MONTHLY_LABEL_PATTERN)].map((m) => ({
     source: m[0],
     year: m[1] ? Number(m[1]) : null,
     system: (m[2] ?? null) as "八字" | "紫微" | null,
