@@ -112,5 +112,6 @@ test("列出会改变判断的现实条件（含“是否”）不被当作绝�
   const listAudit = { schema: "whoami.answer-audit.v1", evidenceId: e.evidenceId, claims: [
     { text: list, kinds: ["event", "timing"], stance: "unresolved", factRefs: [`${c}.bazi.cycleRelations`] },
   ] };
-  assert.equal(checkAnswer(list, e, "2026-09-28", listAudit).status, "valid");
+  // “明年”按 2025-09-28 冻结解析为 2026，落在 evidence 内。
+  assert.equal(checkAnswer(list, e, "2025-09-28", listAudit).status, "valid");
 });
