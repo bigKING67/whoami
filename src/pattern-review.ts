@@ -1,4 +1,4 @@
-import { element, hiddenStemsOf, tenGod, type Chart } from "./chart.js";
+import { element, STEMS, stemCombineElement, TEN_GOD_GROUPS, type Chart } from "./chart.js";
 
 type Bazi = Chart["candidates"][number]["bazi"];
 
@@ -18,9 +18,9 @@ const SRC_V3 = {
   lu: "https://donglishuzhai.net/chapter/3758.html",
 } as const;
 
-const WEALTH = ["正财", "偏财"];
-const SEAL = ["正印", "偏印"];
-const FOOD_HURT = ["食神", "伤官"];
+const WEALTH: string[] = [...TEN_GOD_GROUPS.wealth];
+const SEAL: string[] = [...TEN_GOD_GROUPS.seal];
+const FOOD_HURT: string[] = [...TEN_GOD_GROUPS.foodHurt];
 
 type Check = {
   id: string;
@@ -111,7 +111,7 @@ const PATTERNS: { id: string; label: string; monthTenGods: string[]; checks: Che
 // 以下两格为 evidence v3 新增：入口按禄位、刃位而非十神（戊日午月为阳刃，但午本气丁为戊之正印）。
 const LU: Record<string, string> = { 甲: "寅", 乙: "卯", 丙: "巳", 丁: "午", 戊: "巳", 己: "午", 庚: "申", 辛: "酉", 壬: "亥", 癸: "子" };
 const BLADE: Record<string, string> = { 甲: "卯", 丙: "午", 戊: "午", 庚: "酉", 壬: "子" };
-const OFFICER_KILLER = ["正官", "七杀"];
+const OFFICER_KILLER: string[] = [...TEN_GOD_GROUPS.officerKiller];
 const V3_PATTERNS: { id: string; label: string; checks: Check[] }[] = [
   {
     id: "lu", label: "建禄月劫格",
@@ -136,7 +136,7 @@ const V3_PATTERNS: { id: string; label: string; checks: Check[] }[] = [
       { id: "officer-killer-wealth-seal", category: "support", label: "透官煞而露财印不见伤官", groups: [OFFICER_KILLER, [...WEALTH, ...SEAL]], absent: ["伤官"], quote: "陽刃透官煞而露財印，不見傷官", source: SRC.rescue, pending: "官煞根深与否（《论阳刃》“官煞露而根深，其貴也大”）未裁定" },
       { id: "no-officer-killer", category: "risk", label: "阳刃无官煞", groups: [], absent: OFFICER_KILLER, quote: "陽刃無官煞，陽刃格敗也", source: SRC.rescue, pending: "只核显干；藏干官煞须宿主论证" },
       { id: "officer", category: "support", label: "阳刃用官", groups: [["正官"]], quote: "陽刃用官，透刃不慮", source: SRC_V3.blade, pending: "官是否得力须宿主论证" },
-      { id: "killer-blade", category: "risk", label: "露煞透刃", groups: [["七杀"], ["劫财"]], quote: "陽刃露煞，透刃無成", source: SRC_V3.blade, pending: "阳干之刃与七杀五合，实即合煞；须看位置" },
+      { id: "killer-blade", category: "risk", label: "露煞透刃（阳干之刃即劫财）", groups: [["七杀"], ["劫财"]], quote: "陽刃露煞，透刃無成", source: SRC_V3.blade, pending: "阳干之刃与七杀五合，实即合煞；须看位置" },
       { id: "officer-hurt", category: "risk", label: "透官而又被伤", groups: [["正官"], ["伤官"]], quote: "陽刃透官而又被傷", source: SRC.rescue, pending: "有无印护须宿主论证" },
       { id: "killer-combined", category: "risk", label: "透煞而又被合", groups: [["七杀"]], combinedWith: ["七杀"], quote: "透煞而又被合", source: SRC.rescue, pending: "合是否成立须宿主论证" },
       { id: "food-hurt-seal", category: "rescue", label: "带伤食而重印以护", groups: [OFFICER_KILLER, FOOD_HURT, SEAL], quote: "帶傷食而重印以護之", source: SRC.rescue, pending: "印是否“重”不能机械核对" },
@@ -147,8 +147,7 @@ const V3_PATTERNS: { id: string; label: string; checks: Check[] }[] = [
 ];
 
 const ROLES = ["main", "middle", "residual"] as const;
-const COMBINE_PAIRS = ["甲己", "乙庚", "丙辛", "丁壬", "戊癸"];
-const isCombine = (a: string, b: string) => COMBINE_PAIRS.some((p) => p === a + b || p === b + a);
+const isCombine = (a: string, b: string) => Boolean(stemCombineElement(a, b));
 
 /**
  * 正官、七杀、印、食神、伤官五格的显干前提核对（财格见 wealthReview）。
@@ -199,8 +198,9 @@ export function patternReview(bazi: Bazi, options: { v3?: boolean } = {}) {
   };
   // 建禄月劫与阳刃：入口按月支禄位、刃位；月令其他透出藏干即可能的用神入口（《论用神》“別取財官煞食爲用”）。
   const dayStem = bazi.dayMaster;
-  const monthMainGod = tenGod(dayStem, hiddenStemsOf(month.branch)[0]!);
   const yang = "甲丙戊庚壬".includes(dayStem);
+  // 月劫与建禄、阳刃一样按位置：阴干月建为同五行阳干之禄（乙寅、丁巳、己巳、辛申、癸亥），不按月令本气十神。
+  const yangPartner = STEMS[STEMS.indexOf(dayStem) - 1];
   const extendedEntry = (id: string) => {
     if (id === "blade")
       return yang && BLADE[dayStem] === month.branch
@@ -208,8 +208,8 @@ export function patternReview(bazi: Bazi, options: { v3?: boolean } = {}) {
         : [];
     if (LU[dayStem] === month.branch)
       return [{ kind: "建禄", branch: month.branch, rule: "月建逢禄堂（《论建禄月劫》）" }];
-    return !yang && monthMainGod === "劫财"
-      ? [{ kind: "月劫", branch: month.branch, rule: "阴干月令本气为劫财（阳干同位为阳刃）" }]
+    return !yang && yangPartner && LU[yangPartner] === month.branch
+      ? [{ kind: "月劫", branch: month.branch, rule: "阴干月建为同五行阳干之禄（阳干同位为阳刃）" }]
       : [];
   };
   const extendedPattern = (pattern: (typeof V3_PATTERNS)[number]) => {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { buildChart } from "../src/chart.js";
-import { contextFor } from "../src/evidence.js";
+import { contextFor, evidenceForReport } from "../src/evidence.js";
 import { cycleRelations, pairBranchRelations, completeBranchGroups } from "../src/cycle-relations.js";
 
 const birth = JSON.parse(readFileSync("examples/birth.json", "utf8"));
@@ -138,6 +138,11 @@ test("report-check 按报告绑定的 evidence 版本重算：v1 历史报告有
   assert.equal(JSON.parse(legacy.stdout).evidenceSchema, "whoami.evidence.v1");
   const template = run(["report-template", "--input", "examples/birth.json", "--years", "2026"]);
   assert.equal(JSON.parse(template.stdout).evidenceId, contextFor(birth, [2026]).evidenceId);
+  // 月度 v2 报告在默认 v3 下仍须按 v2 重算。
+  const monthV2 = contextFor(birth, [2025], "whoami.evidence.v2", "month");
+  const bound = evidenceForReport(buildChart(birth, [2025], "month"), { evidenceId: monthV2.evidenceId });
+  assert.equal(bound.schema, "whoami.evidence.v2");
+  assert.equal(bound.evidenceId, monthV2.evidenceId);
   const wrongGranularity = run(["report-check", "--input", "examples/birth.json", "--report", "examples/report.json", "--years", "2024,2025,2026,2027,2028", "--granularity", "month"]);
   assert.equal(JSON.parse(wrongGranularity.stderr).code, "GRANULARITY_MISMATCH");
 });

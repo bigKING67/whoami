@@ -31,6 +31,18 @@ const HIDDEN = [
   "戊辛丁",
   "壬甲",
 ];
+/** 天干五合及合化五行；格局与外格共用。 */
+export const STEM_COMBINE: Record<string, string> = { 甲己: "土", 乙庚: "金", 丙辛: "水", 丁壬: "木", 戊癸: "火" };
+export const stemCombineElement = (a: string, b: string): string | undefined =>
+  STEM_COMBINE[a + b] ?? STEM_COMBINE[b + a];
+/** 十神分组；格局与外格共用。 */
+export const TEN_GOD_GROUPS = {
+  wealth: ["正财", "偏财"],
+  seal: ["正印", "偏印"],
+  foodHurt: ["食神", "伤官"],
+  officerKiller: ["正官", "七杀"],
+  peer: ["比肩", "劫财"],
+} as const;
 /** 地支藏干（首字为本气），与 chart 生成藏干用同一张表。 */
 export const hiddenStemsOf = (branch: string) => [...HIDDEN[BRANCHES.indexOf(branch)]!];
 export function digest(value: unknown): string {

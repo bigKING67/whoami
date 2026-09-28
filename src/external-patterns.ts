@@ -1,4 +1,4 @@
-import { element, hiddenStemsOf, tenGod } from "./chart.js";
+import { element, hiddenStemsOf, stemCombineElement, tenGod, TEN_GOD_GROUPS } from "./chart.js";
 
 type Pillar = { position: string; stem: string; branch: string };
 type Bazi = { dayMaster: string; pillars: Pillar[] };
@@ -9,9 +9,6 @@ const SRC = {
   combine: "https://donglishuzhai.net/chapter/3718.html",
 } as const;
 
-// 天干五合及合化五行。
-const COMBINE: Record<string, string> = { 甲己: "土", 乙庚: "金", 丙辛: "水", 丁壬: "木", 戊癸: "火" };
-const combinedElement = (a: string, b: string) => COMBINE[a + b] ?? COMBINE[b + a];
 // 五行的三合局与三会方。
 const FRAMES: Record<string, string[]> = {
   木: ["亥卯未", "寅卯辰"],
@@ -20,11 +17,11 @@ const FRAMES: Record<string, string[]> = {
   水: ["申子辰", "亥子丑"],
   土: [],
 };
-const WEALTH = ["正财", "偏财"];
-const SEAL = ["正印", "偏印"];
-const OFFICER_KILLER = ["正官", "七杀"];
-const FOOD_HURT = ["食神", "伤官"];
-const PEER = ["比肩", "劫财"];
+const WEALTH: string[] = [...TEN_GOD_GROUPS.wealth];
+const SEAL: string[] = [...TEN_GOD_GROUPS.seal];
+const OFFICER_KILLER: string[] = [...TEN_GOD_GROUPS.officerKiller];
+const FOOD_HURT: string[] = [...TEN_GOD_GROUPS.foodHurt];
+const PEER: string[] = [...TEN_GOD_GROUPS.peer];
 
 type Check = { condition: string; observed: boolean; quote?: string; source?: string; interpretation?: string };
 
@@ -43,33 +40,28 @@ export function externalPatternCandidates(bazi: Bazi) {
   const visibleGods = gods(visible.map((p) => p.stem));
   const hasVisible = (targets: string[]) => visibleGods.some((g) => targets.includes(g));
   const monthMain = hiddenStemsOf(byPos.month!.branch)[0]!;
+  // 月令本气是否比劫（“日與月同”）只作信息输出。
   const monthMainGod = tenGod(day, monthMain);
   const frameComplete = (el: string) => (FRAMES[el] ?? []).find((f) => [...f].every((b) => branches.includes(b)));
   const sameElementRoot = bazi.pillars.some((p) => hiddenStemsOf(p.branch).some((h) => element(h) === dayElement));
-  // whoami 对“身無氣／日主無根”的解释：地支无同五行藏干、显干无比劫与印。原文无阈值。
-  const noStrength = !sameElementRoot && !hasVisible(PEER) && !hasVisible(SEAL);
+  // whoami 对“身無氣／日主無根”的解释：地支无同五行藏干、显干无比劫。原文无阈值；透印另作排除条件。
+  const noStrength = !sameElementRoot && !hasVisible(PEER);
   const counts = new Map<string, number>();
   for (const b of branches) counts.set(b, (counts.get(b) ?? 0) + 1);
   const maxRepeat = Math.max(...counts.values());
 
-  const gate: Check[] = [
-    { condition: "年/月/时干无正官、七杀", observed: !hasVisible(OFFICER_KILLER), quote: "大約要干頭無官無煞，方成外格", source: SRC.misc },
-    { condition: `月令本气${monthMain}为日主比劫（日與月同）`, observed: PEER.includes(monthMainGod), quote: "若月令自有用神，豈可別尋外格", source: SRC.outer },
-  ];
+  // 外格通则：干头无官煞（化格的合化之干除外，见下）。月令是否比劫只作信息，从格的月令本就不是比劫。
+  const officerGate: Check = { condition: "年/月/时干透正官或七杀", observed: hasVisible(OFFICER_KILLER), quote: "大約要干頭無官無煞，方成外格", source: SRC.misc };
+  const gate = [{ condition: "年/月/时干无正官、七杀", observed: !officerGate.observed, quote: officerGate.quote, source: SRC.misc }];
 
-  const candidate = (id: string, label: string, entry: Check[], blockers: Check[], pending: string) => {
-    // 首项是该格的核心入口（日干或核心局）；核心入口不符时排除条件无意义，记为 not-observed。
-    const status = !entry[0]!.observed
-      ? ("not-observed" as const)
-      : blockers.some((b) => b.observed)
-        ? ("blocked" as const)
-        : entry.every((c) => c.observed)
-          ? ("entry-observed" as const)
-          : ("not-observed" as const);
+  // 入口齐全后才看排除条件：入口不全记 not-observed，避免日干相符即列出大量无关的 blocked。
+  const candidate = (id: string, label: string, entry: Check[], ownBlockers: Check[], pending: string, gateBlocker: Check | null = officerGate) => {
+    const blockers = gateBlocker && !ownBlockers.some((b) => b.condition === gateBlocker.condition) ? [...ownBlockers, gateBlocker] : ownBlockers;
+    const complete = entry.every((c) => c.observed);
     return {
       id,
       label,
-      status,
+      status: !complete ? ("not-observed" as const) : blockers.some((b) => b.observed) ? ("blocked" as const) : ("entry-observed" as const),
       entry,
       blockers,
       pending,
@@ -77,7 +69,7 @@ export function externalPatternCandidates(bazi: Bazi) {
   };
 
   const dayCombine = ["month", "hour"]
-    .map((pos) => ({ pos, stem: byPos[pos]!.stem, el: combinedElement(day, byPos[pos]!.stem) }))
+    .map((pos) => ({ pos, stem: byPos[pos]!.stem, el: stemCombineElement(day, byPos[pos]!.stem) }))
     .find((x) => x.el);
   const transformEl = dayCombine?.el;
 
@@ -92,7 +84,9 @@ export function externalPatternCandidates(bazi: Bazi) {
       { condition: "日干与月干或时干五合", observed: Boolean(dayCombine), quote: "要化出之物，得時乘令，四支局全", source: SRC.misc },
       { condition: `月令本气属化神五行${transformEl ?? ""}`, observed: Boolean(transformEl && element(monthMain) === transformEl), source: SRC.misc },
       { condition: `地支全化神${transformEl ?? ""}之三合或三会`, observed: Boolean(transformEl && frameComplete(transformEl)), quote: "丁壬化木，地支全亥卯未、寅卯辰，而又生於春月", source: SRC.misc },
-    ], [], "原书以日干合月干为例，未限定月干或时干；相合是否被间隔或争合破坏（《论十干合而不合》）须宿主论证；局不全者原书称次等"),
+    ], [], "原书以日干合月干为例，未限定月干或时干；相合是否被间隔或争合破坏（《论十干合而不合》）须宿主论证；局不全者原书称次等",
+    // 合化之干本身可能是官星（如丁壬之壬），不计入干头官煞。
+    { ...officerGate, condition: "除合化之干外，年/月/时干透正官或七杀", observed: visible.some((p) => p.position !== dayCombine?.pos && OFFICER_KILLER.includes(tenGod(day, p.stem))) }),
     candidate("reverse-clash", "倒冲", [
       { condition: "年/月/时干无财、官", observed: !hasVisible([...WEALTH, "正官"]), quote: "四柱無財官而對面以沖之，要支中字多", source: SRC.misc },
       { condition: `同一地支至少三见（当前最多 ${maxRepeat} 见）`, observed: maxRepeat >= 3, source: SRC.misc, interpretation: "“支中字多”无阈值；whoami 按原书例（三午、四午）取至少三见" },
@@ -149,12 +143,13 @@ export function externalPatternCandidates(bazi: Bazi) {
   return {
     scope: "外格候选：只核对《子平真诠》论外格用舍、论杂格写明且可由干支复算的入口与排除条件",
     gate,
+    monthMainTenGod: monthMainGod,
     candidates,
     judgment: "unresolved" as const,
     sources: { ...SRC },
     limits: [
       "原书认为月令自有用神时不可别寻外格，“硬填入格，百無一是”；entry-observed 只表示可复算入口出现，须先论证正格不成立。",
-      "blocked 表示原文明言的排除条件出现；not-observed 表示入口不全，均不判正格成败。",
+      "入口齐全后才看排除条件：blocked 表示入口齐全但原文明言的排除条件（含干头官煞通则）出现；not-observed 表示入口不全；均不判正格成败。",
       "interpretation 标注的条件是 whoami 对原文无阈值说法的复算定义，不是原文；拱禄、魁罡等原书否定的杂格不列。",
       "从儿、从旺、从强等原书未载之格不在本模块内。",
     ],

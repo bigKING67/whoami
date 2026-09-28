@@ -10,6 +10,9 @@ import { externalPatternCandidates } from "../src/external-patterns.js";
 const POS = ["year", "month", "day", "hour"] as const;
 function bazi(pillars: string) {
   const [y, m, d, h] = pillars.split(" ");
+  // 只接受真实存在的六十甲子柱（干支阴阳一致），避免测试引擎不可能产生的命盘。
+  for (const v of [y!, m!, d!, h!])
+    assert.equal("甲丙戊庚壬".includes(v[0]!), "子寅辰午申戌".includes(v[1]!), `非法干支柱 ${v}`);
   const day = d![0]!;
   return {
     dayMaster: day,
@@ -35,6 +38,9 @@ test("阳刃按刃位入格：丙日午月、戊日午月为阳刃，丁日午�
   assert.equal(pattern("庚子 丙午 丁卯 甲辰", "blade").status, "outside-scope");
   assert.equal(pattern("庚子 丙午 丁卯 甲辰", "lu").entry[0]!.kind, "建禄");
   assert.equal(pattern("庚子 戊寅 乙卯 甲申", "lu").entry[0]!.kind, "月劫");
+  // 月劫按同五行阳干之禄：己日巳月是（戊禄在巳），己日辰月虽本气戊为劫财却不是。
+  assert.equal(pattern("甲子 己巳 己巳 甲子", "lu").entry[0]!.kind, "月劫");
+  assert.equal(pattern("甲子 戊辰 己巳 甲子", "lu").status, "outside-scope");
   assert.equal(pattern("庚子 戊申 丙午 甲午", "lu").status, "outside-scope");
 });
 
@@ -48,13 +54,15 @@ test("阳刃露煞透刃与煞被合：壬煞与丁刃同透即五合", () => {
   assert.equal(check(pattern("庚子 甲午 丙寅 己亥", "blade"), "no-officer-killer").prerequisite, "observed");
 });
 
-test("建禄用官遇伤而伤被合；合日干不算合去", () => {
-  const lu = pattern("辛酉 丁寅 甲子 壬申", "lu");
+test("建禄用官遇伤而伤被合", () => {
+  // 甲日寅月建禄；年辛为正官，月壬为偏印，时丁为伤官，丁壬五合。
+  const lu = pattern("辛酉 壬寅 甲子 丁卯", "lu");
+  assert.equal(lu.entry[0]!.kind, "建禄");
   assert.equal(check(lu, "officer-hurt").prerequisite, "observed");
-  assert.equal(check(lu, "officer-hurt-combined").prerequisite, "observed");
-  // 伤官丁只与日干相合时不算被合（日干丁壬合不计）。
-  const dayOnly = pattern("辛酉 丁寅 壬寅 庚子", "lu");
-  assert.equal(dayOnly.status, "outside-scope");
+  const combined = check(lu, "officer-hurt-combined") as { prerequisite: string; combined?: { pairs: { stems: string }[] } };
+  assert.equal(combined.prerequisite, "observed");
+  assert.equal(combined.combined!.pairs[0]!.stems, "丁壬");
+  // 伤官、七杀不可能与日干五合（日干只合其正财或正官），“合日干不爲合去”在这两项上是结构性的。
   assert.deepEqual(lu.useGodCandidates.map((h) => h.tenGod), []);
 });
 
@@ -64,9 +72,10 @@ test("外格：排除条件出现即 blocked，入口齐全才 entry-observed，
   assert.equal(find("丙寅 丁卯 甲辰 丙寅", "one-element").status, "entry-observed");
   assert.equal(find("庚寅 丁卯 甲辰 丙寅", "one-element").status, "blocked");
   // 化格：丁壬相合，卯月本气乙属木，地支全亥卯未。
-  // 地支丑卯未子不全亥卯未、寅卯辰，局不全则入口不全。
-  assert.equal(find("辛丑 壬卯 丁未 庚子", "transform").status, "not-observed");
-  assert.equal(find("己亥 壬卯 丁未 辛亥", "transform").entry.map((c) => c.observed).join(), "true,true,true");
+  // 丁壬合，寅月本气甲属木，地支全寅卯辰；合化之壬虽为丁之正官，不计入干头官煞。
+  assert.equal(find("辛亥 壬寅 丁卯 甲辰", "transform").status, "entry-observed");
+  // 地支丑寅巳子不全木局，入口不全。
+  assert.equal(find("辛丑 壬寅 丁巳 庚子", "transform").status, "not-observed");
   // 从财：透印即不从。
   assert.equal(find("庚申 甲申 丙申 庚申", "follow-wealth").status, "blocked");
   const noRoot = find("庚申 庚申 丙申 庚申", "follow-wealth");
@@ -75,9 +84,13 @@ test("外格：排除条件出现即 blocked，入口齐全才 entry-observed，
   // 朝阳：辛日时干戊，干头无木火。
   assert.equal(find("庚子 庚子 辛亥 戊子", "facing-sun").status, "entry-observed");
   assert.equal(find("丙子 庚子 辛亥 戊子", "facing-sun").status, "blocked");
-  const gate = externalPatternCandidates(bazi("庚申 庚申 丙申 庚申")).gate;
-  assert.equal(gate[0]!.observed, true);
-  assert.equal(gate[1]!.observed, false);
+  const noisy = externalPatternCandidates(bazi("庚申 庚申 丙申 庚申"));
+  assert.equal(noisy.gate[0]!.observed, true);
+  assert.equal(noisy.monthMainTenGod, "偏财");
+  // 入口不全时不因排除条件出现而列为 blocked：庚日见丙丁巳午但无申子辰，井栏为 not-observed。
+  assert.equal(find("丙寅 庚寅 庚午 丁亥", "well-rail").status, "not-observed");
+  // 通则“干头无官煞”适用于所有外格：朝阳入口齐全但透七杀丁即 blocked。
+  assert.equal(find("丁卯 庚子 辛亥 戊子", "facing-sun").status, "blocked");
 });
 
 test("evidence v3 带建禄阳刃与外格事实；v2 不含且保持冻结", () => {

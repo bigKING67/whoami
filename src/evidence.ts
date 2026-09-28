@@ -466,9 +466,10 @@ export function evidenceForReport(
       ? (report as { evidenceId?: unknown }).evidenceId
       : undefined;
   if (bound === current.evidenceId) return current;
-  if ("granularity" in chart && chart.granularity === "month") return current;
+  // v1 不接受月度粒度；月度报告仍须能按 v2 等已发布版本重算。
+  const month = "granularity" in chart && chart.granularity === "month";
   for (const schema of EVIDENCE_SCHEMAS) {
-    if (schema === CURRENT_EVIDENCE_SCHEMA) continue;
+    if (schema === CURRENT_EVIDENCE_SCHEMA || (month && schema === "whoami.evidence.v1")) continue;
     const older = buildEvidence(chart, schema);
     if (older.evidenceId === bound) return older;
   }

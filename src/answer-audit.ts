@@ -30,7 +30,7 @@ const normalize = (s: string) => s.replace(/\r\n?/gu, "\n").trim();
 const HEADING = /^(?:#{1,6}\s|[一二三四五六七八九十]+、|\d+[.、)]|[（(][一二三四五六七八九十\d]+[)）])/u;
 // 登记为条件性或未决的事件、格局判断，所在句须带条件或限定语；否则多半是把确定判断登记成了条件性。
 const HEDGE =
-  /如果|若|假如|除非|一旦|取决|视乎|视情况|而定|条件|可能|或许|也许|倾向|未必|不一定|不确定|尚未|未定|未决|待|须|需要|要看|还要看|是否|能否|会改变|入口|候选|分支|不宜|不能|不等于|并非|不是|不代表|只能|仅|参考|线索|保留|较难|偏向/u;
+  /如果|若|假如|除非|一旦|取决|视乎|视情况|而定|条件|可能|或许|也许|倾向|未必|不一定|不确定|尚未|未定|未决|待|须|需要|要看|还要看|是否|能否|会改变|范围|入口|候选|分支|不宜|不能|不等于|并非|不是|不代表|只能|仅|参考|线索|保留|较难|偏向/u;
 const TRAILING = /[。！？；!?;，,.\s]+$/u;
 
 /** 按句末标点、分号与换行切句，再按逗号切成分句；整句覆盖规则下，切得越细越不容易被半句断言蒙混。 */
@@ -68,7 +68,9 @@ export function checkAnswerAudit(answer: string, raw: unknown, evidence: Evidenc
   if (!Array.isArray(audit.claims) || !audit.claims.length)
     throw new InputError("INVALID_AUDIT", "audit.claims 须为非空数组");
   const facts = new Set(evidence.facts.map((f) => f.id));
-  const claims = audit.claims.map((rawClaim, i) => {
+  // 收集全部问题一次报告，避免宿主逐个补登记反复重跑；单条格式有误的断言不参与覆盖计算。
+  const issues: { code: string; message: string }[] = [];
+  const validate = (rawClaim: unknown, i: number) => {
     const label = `audit.claims[${i}]`;
     const claim = field(rawClaim, label);
     const claimText = typeof claim.text === "string" ? normalize(claim.text) : "";
@@ -100,9 +102,16 @@ export function checkAnswerAudit(answer: string, raw: unknown, evidence: Evidenc
         throw new InputError("AUDIT_KIND_MISMATCH", `${label} 声明为 ${kind}，但未引用对应的命盘事实`);
     }
     return { text: claimText, kinds: kinds as Kind[] };
+  };
+  const claims = audit.claims.flatMap((rawClaim, i) => {
+    try {
+      return [validate(rawClaim, i)];
+    } catch (error) {
+      if (!(error instanceof InputError)) throw error;
+      issues.push({ code: error.code, message: error.message });
+      return [];
+    }
   });
-  // 收集全部问题一次报告，避免宿主逐个补登记反复重跑。
-  const issues: { code: string; message: string }[] = [];
   let covered = 0;
   for (const sentence of sentences(text)) {
     let sentenceJudged = false;
