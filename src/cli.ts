@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildChart } from "./chart.js";
-import { buildEvidence } from "./evidence.js";
+import { buildEvidence, evidenceForReport } from "./evidence.js";
 import { parseInput, InputError } from "./input.js";
 import {
   renderReport,
@@ -240,13 +240,16 @@ function run() {
     return;
   }
   const report = read("report");
-  if (command === "render") process.stdout.write(renderReport(report, context));
+  // 既有报告按其绑定的 evidence 版本重算；新报告使用当前版本。
+  const bound = evidenceForReport(chart, report, context);
+  if (command === "render") process.stdout.write(renderReport(report, bound));
   else {
-    validateReport(report, context);
+    validateReport(report, bound);
     emit({
       status: "valid",
-      chartId: context.chartId,
-      evidenceId: context.evidenceId,
+      chartId: bound.chartId,
+      evidenceId: bound.evidenceId,
+      evidenceSchema: bound.schema,
       limitations:
         "仅验证结构、引用与显式事实断言；不证明自然语言解释的语义正确性或预测能力。",
     });

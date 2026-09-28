@@ -57,7 +57,8 @@ export function compareBirths(before: unknown, after: unknown, years?: number[],
     ...base, status: "compared" as const,
     selected: { before: aId, after: bId },
     changedInputFields: inputKeys.filter(key => !isDeepStrictEqual(a.input[key], b.input[key])),
-    evidenceBinding: { before: ae.evidenceId, after: be.evidenceId, bindingMatch,
+    // 始终按当前 evidence 版本对照；绑定旧版本的报告须按 evidenceSchema 另行 report-check。
+    evidenceBinding: { schema: ae.schema, before: ae.evidenceId, after: be.evidenceId, bindingMatch,
       meaning: bindingMatch ? "两端证据绑定相同；未提交报告，不代表其结构、正文或候选选择已通过校验。"
         : "两端证据绑定不同；绑定旧证据的报告不能直接作为新输入的已校验报告，须核对受影响内容后重新校验。" },
     changedFacts, unchangedFactKeys,

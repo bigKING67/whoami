@@ -67,7 +67,8 @@ function palaceReference(p: Palace) {
  * 逐段核对“YYYY(年)流年<主题宫>落本命<宫>”之后的解释：段首落宫须与命盘一致，段内写出的本命宫
  * 须属于该年该主题的物理宫集合。只覆盖这一固定写法，不理解缩写或其他语义。
  */
-export function assertZiweiPalaceScope(text: string, scope: ZiweiScope, label: string) {
+export function assertZiweiPalaceScope(raw: string, scope: ZiweiScope, label: string) {
+  const text = raw.replace(/\r\n?/gu, "\n"); // CRLF 文本同样以空行分段
   const { palaces, yearly } = scope;
   const headers = [...text.matchAll(HEADER)];
   headers.forEach((header, i) => {

@@ -53,7 +53,8 @@ test("地支后接普通文字不算宫位引用；宫字和括号写法仍能�
 test("report-check 在 v6 报告正文中拦截流年联宫混入集合外宫位", () => {
   const birth = JSON.parse(readFileSync("examples/birth.json", "utf8"));
   const report = JSON.parse(readFileSync("examples/report.json", "utf8"));
-  const e = contextFor(birth, [2024, 2025, 2026, 2027, 2028]);
+  // 样例报告绑定历史 evidence v1。
+  const e = contextFor(birth, [2024, 2025, 2026, 2027, 2028], "whoami.evidence.v1");
   validateReport(report, e);
   const candidate = e.candidateIds[0]!;
   const palaces = e.facts

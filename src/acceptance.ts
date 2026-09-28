@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { InputError, object } from "./input.js";
 import { buildChart } from "./chart.js";
-import { buildEvidence } from "./evidence.js";
+import { buildEvidence, isEvidenceSchema } from "./evidence.js";
 import { contextErrorOutcome } from "./outcome.js";
 import { validateReport } from "./report.js";
 import type { Evidence } from "./evidence.js";
@@ -161,7 +161,7 @@ function verifyReportBinding(
 ): Report {
   const rawContext = readJsonArtifact(context, `${label}.context`);
   const parsedContext = object(rawContext, `${label}.context`);
-  if (parsedContext.schema !== "whoami.evidence.v1")
+  if (!isEvidenceSchema(parsedContext.schema))
     throw new InputError(
       "INVALID_ACCEPTANCE_REPORT",
       `${label}.report 只能绑定可重算的 evidence context`,
@@ -375,7 +375,7 @@ function verifyContextBinding(
   const rawInput = readJsonArtifact(input, `${label}.input`);
   const rawContext = readJsonArtifact(context, `${label}.context`);
   const parsedContext = object(rawContext, `${label}.context`);
-  const evidenceContext = parsedContext.schema === "whoami.evidence.v1";
+  const evidenceContext = isEvidenceSchema(parsedContext.schema);
   const needsInputContext =
     parsedContext.schema === "whoami.chart.v1" &&
     parsedContext.status === "needs-input";
@@ -408,7 +408,8 @@ function verifyContextBinding(
     else {
       if (chart.status === "needs-input")
         throw new Error("输入不足，无法生成 evidence");
-      expected = buildEvidence(chart);
+      // 按冻结 context 记录的 evidence 版本重算，历史样例不因新增事实失效。
+      expected = buildEvidence(chart, parsedContext.schema as Parameters<typeof buildEvidence>[1]);
     }
   } catch (error) {
     if (errorContext && error instanceof InputError) {

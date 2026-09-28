@@ -1102,7 +1102,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           return (
             fact.candidate === candidate &&
             fact.system === "bazi" &&
-            fact.id.endsWith(".bazi.cycles")
+            /\.bazi\.(?:cycles|cycleRelations)$/u.test(fact.id)
           );
         });
         if (
@@ -1114,7 +1114,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
         )
           throw new InputError(
             "MISSING_REASONING_LINK",
-            `${label} 引用了八字大运或流年事实，但未绑定该候选的 bazi-timing 论证`,
+            `${label} 引用了八字大运、流年或岁运关系事实，但未绑定该候选的 bazi-timing 论证`,
           );
       }
     if (requiredZiweiTopic)
@@ -1424,7 +1424,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           return (
             fact.candidate === candidate &&
             fact.system === "bazi" &&
-            fact.id.endsWith(".bazi.cycles")
+            /\.bazi\.(?:cycles|cycleRelations)$/u.test(fact.id)
           );
         });
         const ziweiHasCycles = ziweiFacts.some((fact) =>

@@ -38,6 +38,8 @@ node dist/cli.js answer-check --input examples/birth.json --years 2026 --as-of 2
 
 `answer-check` 用于快速档纯文本答复：`--text` 为文本文件或 `-`（stdin，避免落盘真人答复）；`--as-of` 是按用户报告时区冻结的 YYYY-MM-DD，答复含相对年份时必须提供。它复用报告的高风险措辞、未决前提升级与时间规则，并在单候选时核对流年主题宫位集合；成功输出 `status: valid` 与 chartId/evidenceId，失败按下述错误契约退出 1。它不读取报告、不证明解释语义，也不替代完整报告的 `report-check`。
 
+`context` 默认输出 `whoami.evidence.v2`，相对 v1 只新增 `.bazi.cycleRelations`（流年、当年大运与本命的干支关系）及其在 `R-bazi-timing` 中的关联，共有事实逐字节不变。`report-check`/`render` 按报告绑定的 evidenceId 自动选用 v1 或 v2 重算，并在结果中返回 `evidenceSchema`；v1 只为既有报告与验收样例保留，新报告一律基于 v2。
+
 `report-template` 当前输出 v6，`timeReference.asOfDate` 与 `timeReference.timeZone` 留空等待宿主填写。填写报告实际采用的本地公历日期与 IANA 时区后再运行 `report-check`；不能把模板空值直接当成有效报告，也不能用系统读取时刻替换已经冻结的报告基准。
 
 --input - 从 stdin 读。正常输出 stdout；错误 JSON 到 stderr 并退出 1；未知时辰 chart/context/rule-review 退出 2 并返回 needs-input。context 使用可解析为整数列表的显式 `--years` 时，确定性输入/计算错误会带 `whoami.error.v1`、命令和年份，可作为自然语言验收产物重放；非整数、NaN 或无穷年份维持普通错误 JSON。错误产物仍是失败结果，不能当作空白命盘或自动更正输入。ambiguous 不视作程序错误，但必须按多候选/未定时辰处理。指定流年 1901–2099，最多 20 年；不指定时以 Asia/Shanghai 当前年 ±2 年。

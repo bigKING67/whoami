@@ -470,7 +470,8 @@ test("双候选自动范围逐段绑定各自起止值与附录锚点", () => {
     new URL("../examples/acceptance/boundary/report.json", import.meta.url),
     "utf8",
   ));
-  const boundary = contextFor(boundaryInput, [2026, 2027, 2028]);
+  // 样例报告绑定历史 evidence v1。
+  const boundary = contextFor(boundaryInput, [2026, 2027, 2028], "whoami.evidence.v1");
   const markdown = renderReport(boundaryReport, boundary);
   const start = markdown.indexOf("## 出生时间与起运范围（自动生成）");
   const end = markdown.indexOf("## 核心规则复核（自动生成）");
@@ -2308,4 +2309,18 @@ test("报告与渲染接受完整 ISO 资料钟点，拒绝其中非法秒数", 
     assert.throws(() => validateReport(report, e), (error: unknown) =>
       error instanceof InputError && error.code === "INVALID_CLOCK_TIME");
   }
+});
+test("v6 正文引用岁运关系事实时必须绑定同候选 bazi-timing", () => {
+  const r = valid();
+  validateReport(r, e);
+  const candidate = e.candidateIds[0]!;
+  const claim = r.sections
+    .flatMap((s: { claims: { factRefs: string[]; reasoningRefs: { topic: string }[] }[] }) => s.claims)
+    .find((c: { factRefs: string[]; reasoningRefs: { topic: string }[] }) =>
+      c.factRefs.some((id) => id.includes(".bazi.")) &&
+      !c.reasoningRefs.some((l) => l.topic === "bazi-timing"))!;
+  assert(claim);
+  claim.factRefs.push(`${candidate}.bazi.cycleRelations`);
+  assert.throws(() => validateReport(r, e), (err: unknown) =>
+    err instanceof InputError && err.code === "MISSING_REASONING_LINK" && err.message.includes("岁运关系"));
 });

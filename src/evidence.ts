@@ -2,6 +2,12 @@ import { buildChart, digest, element, type Chart } from "./chart.js";
 import { ziweiTransforms } from "./ziwei-transforms.js";
 import { wealthReview } from "./wealth-review.js";
 import { InputError } from "./input.js";
+import {
+  completeBranchGroups,
+  cycleRelations,
+  pairBranchRelations,
+  type BranchRelation,
+} from "./cycle-relations.js";
 
 export type Fact = {
   id: string;
@@ -19,7 +25,18 @@ export type Rule = {
   guidance: string;
   source: string;
 };
-export function buildEvidence(chart: Chart) {
+/**
+ * v1 是历史冻结口径（无 cycleRelations），仅用于重算既有报告与验收样例；新 context 默认 v2。
+ * 两版共有的事实与规则逐字节一致，v2 只新增岁运关系事实及其规则关联。
+ */
+export const EVIDENCE_SCHEMAS = ["whoami.evidence.v1", "whoami.evidence.v2"] as const;
+export type EvidenceSchema = (typeof EVIDENCE_SCHEMAS)[number];
+export const CURRENT_EVIDENCE_SCHEMA: EvidenceSchema = "whoami.evidence.v2";
+export const isEvidenceSchema = (value: unknown): value is EvidenceSchema =>
+  EVIDENCE_SCHEMAS.includes(value as EvidenceSchema);
+
+export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVIDENCE_SCHEMA) {
+  const v2 = schema === "whoami.evidence.v2";
   if (chart.status === "needs-input")
     throw new InputError("MISSING_TIME", chart.questions[0]!);
   const facts: Fact[] = [],
@@ -150,64 +167,11 @@ export function buildEvidence(chart: Chart) {
       "unweighted descriptive counts",
     );
     const relationRefs: string[] = [];
-    const pairs = [
-      ["冲", "子午 丑未 寅申 卯酉 辰戌 巳亥"],
-      ["六合", "子丑 寅亥 卯戌 辰酉 巳申 午未"],
-      ["害", "子未 丑午 寅巳 卯辰 申亥 酉戌"],
-    ] as const;
-    const relations: { kind: string; positions: string[]; branches: string }[] =
-      [];
+    const relations: BranchRelation[] = [];
     for (let i = 0; i < 4; i++)
-      for (let j = i + 1; j < 4; j++) {
-        const a = c.bazi.pillars[i]!,
-          b = c.bazi.pillars[j]!;
-        for (const [kind, table] of pairs)
-          if (
-            table
-              .split(" ")
-              .some(
-                (pair) =>
-                  pair.includes(a.branch) &&
-                  pair.includes(b.branch) &&
-                  a.branch !== b.branch,
-              )
-          )
-            relations.push({
-              kind,
-              positions: [a.position, b.position],
-              branches: a.branch + b.branch,
-            });
-        if (a.branch === b.branch && "辰午酉亥".includes(a.branch))
-          relations.push({
-            kind: "自刑",
-            positions: [a.position, b.position],
-            branches: a.branch + b.branch,
-          });
-        if (
-          a.branch !== b.branch &&
-          "子卯".includes(a.branch) &&
-          "子卯".includes(b.branch)
-        )
-          relations.push({
-            kind: "刑",
-            positions: [a.position, b.position],
-            branches: a.branch + b.branch,
-          });
-      }
-    for (const [kind, groups] of [
-      ["三合", "申子辰 亥卯未 寅午戌 巳酉丑"],
-      ["三刑", "寅巳申 丑戌未"],
-    ] as const) {
-      for (const group of groups.split(" "))
-        if ([...group].every((b) => c.bazi.pillars.some((p) => p.branch === b)))
-          relations.push({
-            kind,
-            positions: c.bazi.pillars
-              .filter((p) => group.includes(p.branch))
-              .map((p) => p.position),
-            branches: group,
-          });
-    }
+      for (let j = i + 1; j < 4; j++)
+        relations.push(...pairBranchRelations(c.bazi.pillars[i]!, c.bazi.pillars[j]!));
+    relations.push(...completeBranchGroups(c.bazi.pillars));
     relationRefs.push(
       add(
         id,
@@ -287,13 +251,27 @@ export function buildEvidence(chart: Chart) {
         "先核对具体柱、地支和藏干，再讨论对日主的支持。同五行与同天干分别列出；直接受冲的根仍是盘面事实，不能直接删除，未列直接六冲也不等于根气有效或身强。结合月令、透干及其他关系提出支持、反证与待核条件；不把多条同源描述重复计为独立证据，不自动裁定旺衰、从格或用神。",
       source: "references/analysis.md#通根复核",
     });
+    const cycleRelationRef = v2
+      ? add(
+          id,
+          "bazi",
+          "cycleRelations",
+          "流年、当年大运与本命的干支关系（不判化合成败或事件）",
+          cycleRelations(c.bazi),
+          "传统干合干冲、合冲刑害、伏吟反吟关系表；流年按 lunar-typescript 立春时刻，大运按起运范围对齐",
+        )
+      : null;
+    const timingGuidance =
+      "将具体运年与本命柱联系，区分触发线索、替代解释及现实条件；冲不等于灾、合不等于吉，不从关系表直接推断具体人生事件。";
     rules.push({
       id: `${id}.R-bazi-timing`,
       candidate: id,
       label: "本命与运年联读",
-      factRefs: [cycleRef, ...relationRefs, ...pillarRefs],
-      guidance:
-        "将具体运年与本命柱联系，区分触发线索、替代解释及现实条件；冲不等于灾、合不等于吉，不从关系表直接推断具体人生事件。",
+      factRefs: [cycleRef, ...(cycleRelationRef ? [cycleRelationRef] : []), ...relationRefs, ...pillarRefs],
+      guidance: v2
+        ? timingGuidance +
+          "cycleRelations 只列组合是否出现：合是否化、冲是否成立、年内换运前后的差异及起运不确定时的分支仍须宿主论证。"
+        : timingGuidance,
       source: "references/analysis.md#八字",
     });
     const base = add(
@@ -359,7 +337,7 @@ export function buildEvidence(chart: Chart) {
     rules,
   });
   return {
-    schema: "whoami.evidence.v1" as const,
+    schema,
     chartId: chart.chartId,
     evidenceId,
     status: chart.status,
@@ -377,6 +355,24 @@ export function buildEvidence(chart: Chart) {
   };
 }
 export type Evidence = ReturnType<typeof buildEvidence>;
-export function contextFor(raw: unknown, years?: number[]) {
-  return buildEvidence(buildChart(raw, years));
+export function contextFor(raw: unknown, years?: number[], schema?: EvidenceSchema) {
+  return buildEvidence(buildChart(raw, years), schema);
+}
+/** 按报告已绑定的 evidenceId 选用对应版本重算；都不匹配时返回当前版本，由报告校验给出 STALE_REPORT。 */
+export function evidenceForReport(
+  chart: Chart,
+  report: unknown,
+  current: Evidence = buildEvidence(chart),
+) {
+  const bound =
+    report && typeof report === "object"
+      ? (report as { evidenceId?: unknown }).evidenceId
+      : undefined;
+  if (bound === current.evidenceId) return current;
+  for (const schema of EVIDENCE_SCHEMAS) {
+    if (schema === CURRENT_EVIDENCE_SCHEMA) continue;
+    const older = buildEvidence(chart, schema);
+    if (older.evidenceId === bound) return older;
+  }
+  return current;
 }
