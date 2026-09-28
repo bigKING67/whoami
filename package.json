@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "rm -rf tmp/test && mkdir -p tmp/test && TMPDIR=\"$PWD/tmp/test\" tsx --test tests/*.test.ts && rm -rf tmp/test",
     "cli": "tsx src/cli.ts",
     "blind-review:adjudicate": "tsx scripts/adjudicate-bazi-timing-blind-review.ts",
     "audit:codex-runtime": "tsx scripts/audit-codex-runtime-evidence.ts",
