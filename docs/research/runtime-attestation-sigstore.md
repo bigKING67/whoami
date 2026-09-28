@@ -72,6 +72,8 @@ GitHub artifact attestation 由 GitHub Actions 的 OIDC 身份经 Sigstore（Ful
 
 第二轮审查又指出：签发 job 仍直接采用生成 job 写出的运行时、模型列表与答复，而模型留下的后台进程可在宿主退出后改写这些文件。现已改为：runner 在内存中收集宿主完整输出，宿主退出后结束其整个进程组，之后才创建产物目录；事件流逐 case 纳入签发载荷（`eventLogs`）；签发 job 与 `acceptance-check` 都从事件流重新推导运行时、模型列表与答复并与落盘文件比对（共用 `src/host-events.ts`）；事件流中出现声明模型以外的模型时在结果中披露。签发 job 还要求运行 ID 与源码提交等于本次工作流，套件须位于本提交的 `suites/forward-attest/<id>`。
 
+生成 job 上传前检查产物中是否出现 API key 原文：模型的 Bash 继承环境变量，而 artifact 公开且不经 GitHub 屏蔽。
+
 另外：签发载荷绑定源码提交与宿主事件流中实际出现的全部模型（`observedModels`）；核验时比对证书中的运行 ID 与源码提交；`gh` 未登录、网络或超时等环境问题单独报错，不误报为伪造；context 失败时在调用模型前中止。
 
 ## 已定决定与进度

@@ -51,6 +51,12 @@ jobs:
         run: |
           case "$SUITE" in *[!a-z0-9-]*|"") echo "非法套件 id" && exit 1;; esac
           node scripts/forward-run.mjs --suite "suites/forward-attest/$SUITE" --out out --host claude
+      # 模型的 Bash 进程继承环境变量；产物公开且 GitHub 不屏蔽 artifact 内容，出现 key 原文即失败、不上传。
+      - name: Refuse to upload leaked secret
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if grep -rqF -- "$ANTHROPIC_API_KEY" out; then echo "产物中出现 API key，拒绝上传" && exit 1; fi
       - name: Upload generation
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
