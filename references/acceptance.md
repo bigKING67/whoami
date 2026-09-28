@@ -153,7 +153,7 @@ finalize 会重新生成请求、核对 payload 并验证签名，返回 `whoami
 
 ## CI 签发的生成与评审回执（v3）
 
-`whoami.runtime-receipt.v3` 由两个 GitHub Actions 工作流经 Sigstore 签发（设计见 [运行回执方案](../docs/research/runtime-attestation-sigstore.md)）：生成工作流签发 `whoami.generation-attestation.v1`（Skill、任务、量表、逐 case 产物、运行时、源码提交与实际出现的模型），review 工作流签发 `whoami.review-attestation.v1`（生成载荷摘要、量表与 review）。只有两份签发都有效、证书中的运行 ID 与源码提交与回执一致、review 为 PASS 时才是 `verified`；只有生成签发时结果为 `partial`。review 内容仍是维护者人工评审。核验时必须由核验者给出期望身份：
+`whoami.runtime-receipt.v3` 由两个 GitHub Actions 工作流经 Sigstore 签发（设计见 [运行回执方案](../docs/research/runtime-attestation-sigstore.md)）：生成工作流签发 `whoami.generation-attestation.v1`（Skill、任务、量表、逐 case 产物与宿主事件流、运行时、源码提交与实际出现的模型；运行时、模型列表与答复均由事件流推导），review 工作流签发 `whoami.review-attestation.v1`（生成载荷摘要、量表与 review）。只有两份签发都有效、证书中的运行 ID 与源码提交与回执一致、review 为 PASS 时才是 `verified`；只有生成签发时结果为 `partial`。review 内容仍是维护者人工评审。核验时必须由核验者给出期望身份：
 
 ```sh
 node dist/cli.js acceptance-check --manifest <out>/manifest.json \
@@ -163,7 +163,7 @@ node dist/cli.js acceptance-check --manifest <out>/manifest.json \
   --sigstore-review-workflow bigKING67/whoami/.github/workflows/forward-review.yml
 ```
 
-验收器重算两份载荷并比对摘要，再调用 `gh attestation verify` 核对签名、证书链与工作流身份；缺少期望身份、签发无效、运行 ID 或源码提交不符、清单 review 与签发不一致都拒绝；gh 未登录、网络或超时报环境错误而非伪造。只有合成资料套件可以进入这些工作流。
+验收器重算两份载荷并比对摘要，再调用 `gh attestation verify` 核对签名、证书链与工作流身份；缺少期望身份、签发无效、运行 ID 或源码提交不符、答复或运行时与事件流推导结果不符、清单 review 与签发不一致都拒绝；未给 `--sigstore-review-workflow` 时不核验 review 签发，结果为 partial；事件流中出现声明模型以外的模型时在结果中披露；gh 未登录、网络或超时报环境错误而非伪造。只有合成资料套件可以进入这些工作流。
 
 ## Codex 宿主证据边界
 

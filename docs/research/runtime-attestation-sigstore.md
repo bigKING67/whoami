@@ -70,6 +70,8 @@ GitHub artifact attestation 由 GitHub Actions 的 OIDC 身份经 Sigstore（Ful
 1. **review 未签发导致 verified 可伪造**：只签生成来源时，任何人都可把清单里的 review 从 FAIL 改为 PASS。现在 review 必须经第二个工作流 [forward-review.yml](drafts/forward-review.yml) 在 CI 内签发：维护者手动触发并以输入提交 review，工作流先核验生成签发，再对“生成载荷摘要 + 量表哈希 + review”签发（`whoami.review-attestation.v1`）。v3 只有生成与 review 两份签发都有效才可能 `verified`；review 内容仍是维护者人工评审，结果中如实标注。
 2. **模型与签发权限同处一个 job**：模型可用 Bash 改写产物或读取 OIDC 请求变量。现在拆为两个 job：`generate` 持有 API key、运行模型、无签发权限；`attest` 无 API key、不运行模型，先核对 Skill 快照、task、rubric、输入与提交中的原件逐字节一致、context 可由 CLI 重算，再从落盘产物重算载荷后签发。模型能影响的只剩它自己的答复与事件流。
 
+第二轮审查又指出：签发 job 仍直接采用生成 job 写出的运行时、模型列表与答复，而模型留下的后台进程可在宿主退出后改写这些文件。现已改为：runner 在内存中收集宿主完整输出，宿主退出后结束其整个进程组，之后才创建产物目录；事件流逐 case 纳入签发载荷（`eventLogs`）；签发 job 与 `acceptance-check` 都从事件流重新推导运行时、模型列表与答复并与落盘文件比对（共用 `src/host-events.ts`）；事件流中出现声明模型以外的模型时在结果中披露。签发 job 还要求运行 ID 与源码提交等于本次工作流，套件须位于本提交的 `suites/forward-attest/<id>`。
+
 另外：签发载荷绑定源码提交与宿主事件流中实际出现的全部模型（`observedModels`）；核验时比对证书中的运行 ID 与源码提交；`gh` 未登录、网络或超时等环境问题单独报错，不误报为伪造；context 失败时在调用模型前中止。
 
 ## 已定决定与进度

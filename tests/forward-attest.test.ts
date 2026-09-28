@@ -71,8 +71,50 @@ test("签发后改动 review、证书运行 ID 或源码提交不符、签发无
   rejects(() => checkAcceptanceManifest(manifest, manifestPath, opts((p, b) => ({ ...honest(p, b), sourceDigest: "0".repeat(40) }))), "ACCEPTANCE_RECEIPT_MISMATCH");
   rejects(() => checkAcceptanceManifest(manifest, manifestPath, opts(() => ({ verified: false, runId: null, sourceDigest: null }))), "ACCEPTANCE_RECEIPT_MISMATCH");
   rejects(() => checkAcceptanceManifest(manifest, manifestPath, { sigstoreVerifier: honest }), "INVALID_ACCEPTANCE_RECEIPT");
+  // 未指定期望的 review 工作流：不核验 review 签发，降级为 partial。
   const { reviewWorkflow: _rw, ...noReviewIdentity } = identity;
-  rejects(() => checkAcceptanceManifest(manifest, manifestPath, { trustedSigstoreIdentity: noReviewIdentity, sigstoreVerifier: honest }), "INVALID_ACCEPTANCE_RECEIPT");
+  assert.equal(checkAcceptanceManifest(manifest, manifestPath, { trustedSigstoreIdentity: noReviewIdentity, sigstoreVerifier: honest }).status, "partial");
+});
+
+test("答复与事件流不一致、事件流被改动时拒绝；事件流中出现其他模型时披露", () => {
+  const { out, manifest, manifestPath, honest } = pipeline(true);
+  const opts = { trustedSigstoreIdentity: identity, sigstoreVerifier: honest };
+  const eventsPath = join(out, "case-a", "events.jsonl");
+  const original = readFileSync(eventsPath, "utf8");
+  writeFileSync(eventsPath, original.replace("claude-sonnet-5", "claude-opus-5-5"));
+  // 事件流在产物哈希一层即被拒绝。
+  assert.throws(() => checkAcceptanceManifest(manifest, manifestPath, opts), (e: unknown) => e instanceof InputError && /eventLogs/.test(e.message));
+  writeFileSync(eventsPath, original);
+  // 事件流里 assistant 消息由另一模型产生：重新生成后披露，而不是静默接受。
+  const tmp = mkdtempSync(join(tmpdir(), "whoami-replay-"));
+  for (const id of ["case-a", "case-b"]) {
+    const lines = readFileSync(`tests/fixtures/forward-replay/${id}.events.jsonl`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    lines[1].message.model = "claude-haiku-4-5-20251001";
+    writeFileSync(join(tmp, `${id}.events.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  }
+  const out2 = join(tmp, "out");
+  assert.equal(run(["--suite", "suites/forward-attest/attest-001", "--out", out2, "--host", "replay", "--replay", tmp]).status, 0);
+  const receipt2 = read(join(out2, "receipt.json"));
+  assert.deepEqual(receipt2.observedModels, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
+  writeFileSync(join(tmp, "b"), "{}\n");
+  assert.equal(run(["--finalize", out2, "--bundle", join(tmp, "b")]).status, 0);
+  const m2 = read(join(out2, "manifest.json"));
+  m2.review = PASS;
+  const r2 = read(join(out2, "receipt.json"));
+  const result = checkAcceptanceManifest(m2, join(out2, "manifest.json"), {
+    trustedSigstoreIdentity: identity,
+    sigstoreVerifier: () => ({ verified: true, runId: r2.runId, sourceDigest: r2.sourceCommit }),
+  });
+  assert(result.limitations.some((l) => l.includes("claude-haiku-4-5-20251001")));
+});
+
+test("runner 拒绝 PASS 却带有问题计数的 review，避免签发一份核验必然拒绝的评审", () => {
+  const { out } = pipeline(false);
+  const tmp = mkdtempSync(join(tmpdir(), "whoami-review-"));
+  writeFileSync(join(tmp, "r.json"), JSON.stringify({ ...PASS, factErrors: 1 }));
+  const r = run(["--review", out, "--review-json", join(tmp, "r.json")]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /review 无效/);
 });
 
 test("回执载荷摘要被改（连同清单中的回执哈希）时由载荷重算拒绝", () => {
@@ -109,7 +151,7 @@ test("runner 拒绝非合成套件、已存在输出目录，并在 context 失�
 
 test("签发前重算：生成阶段被改写的 Skill 快照、输入或 context 会被拒绝", () => {
   const { out } = pipeline(false);
-  for (const [file, label] of [["SKILL.snapshot.md", "SKILL"], ["case-a/input.json", "输入"], ["case-a/context.json", "context"]] as const) {
+  for (const [file, label] of [["SKILL.snapshot.md", "SKILL"], ["case-a/input.json", "输入"], ["case-a/context.json", "context"], ["case-a/response.md", "答复"]] as const) {
     const original = readFileSync(join(out, file));
     writeFileSync(join(out, file), Buffer.concat([original, Buffer.from(" ")]));
     const r = run(["--repayload", out]);
@@ -118,4 +160,30 @@ test("签发前重算：生成阶段被改写的 Skill 快照、输入或 contex
     writeFileSync(join(out, file), original);
   }
   assert.equal(run(["--repayload", out]).status, 0);
+});
+
+test("默认 gh 核验：解析证书运行 ID 与源码提交；签发失败与网络故障分别报告", () => {
+  const { manifest, manifestPath, receipt } = pipeline(false);
+  manifest.review = PASS;
+  const bin = mkdtempSync(join(tmpdir(), "whoami-fake-gh-"));
+  const fakeGh = (script: string) => {
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+  };
+  const withPath = <T>(fn: () => T) => {
+    const saved = process.env.PATH;
+    process.env.PATH = `${bin}:${saved}`;
+    try {
+      return fn();
+    } finally {
+      process.env.PATH = saved;
+    }
+  };
+  const check = () => checkAcceptanceManifest(manifest, manifestPath, { trustedSigstoreIdentity: identity });
+  const cert = { runInvocationURI: `https://github.com/bigKING67/whoami/actions/runs/${receipt.runId}/attempts/1`, sourceRepositoryDigest: receipt.sourceCommit };
+  fakeGh(`echo '${JSON.stringify([{ verificationResult: { signature: { certificate: cert } } }])}'`);
+  assert.equal(withPath(check).runtimeVerified, true);
+  fakeGh(`echo 'Loaded 1 attestation from bundle' >&2; echo 'Error: verification failed: no matching attestations' >&2; exit 1`);
+  withPath(() => rejects(check, "ACCEPTANCE_RECEIPT_MISMATCH"));
+  fakeGh(`echo 'Loaded 1 attestation from bundle' >&2; echo 'Error: failed to verify: dial tcp: lookup tuf-repo-cdn.sigstore.dev: no such host' >&2; exit 1`);
+  withPath(() => rejects(check, "INVALID_ACCEPTANCE_RECEIPT"));
 });

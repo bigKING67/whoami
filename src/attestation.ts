@@ -100,6 +100,8 @@ export function generationAttestationPayload(value: {
   runtime: RuntimeIdentity;
   observedModels: string[];
   bindings: RuntimeBindings;
+  /** 各 case 宿主事件流的 SHA-256；运行时声明、模型列表与答复都由事件流推导。 */
+  eventLogs: { id: string; sha256: string }[];
 }) {
   return Buffer.from(
     canonicalJson({
@@ -111,6 +113,7 @@ export function generationAttestationPayload(value: {
       runtime: value.runtime,
       observedModels: value.observedModels,
       bindings: value.bindings,
+      eventLogs: value.eventLogs,
     }),
     "utf8",
   );
