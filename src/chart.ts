@@ -31,6 +31,8 @@ const HIDDEN = [
   "戊辛丁",
   "壬甲",
 ];
+/** 地支藏干（首字为本气），与 chart 生成藏干用同一张表。 */
+export const hiddenStemsOf = (branch: string) => [...HIDDEN[BRANCHES.indexOf(branch)]!];
 export function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }

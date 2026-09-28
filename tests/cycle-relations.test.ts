@@ -108,7 +108,7 @@ test("成对与成组地支关系沿用本命口径", () => {
 });
 
 test("evidence v2 新增 cycleRelations 并由 R-bazi-timing 关联；v1 保持冻结，v2 本命关系只扩展不删改", () => {
-  const e = contextFor(birth, [2026]);
+  const e = contextFor(birth, [2026], "whoami.evidence.v2");
   const old = contextFor(birth, [2026], "whoami.evidence.v1");
   const c = e.candidateIds[0]!;
   assert.equal(e.schema, "whoami.evidence.v2");

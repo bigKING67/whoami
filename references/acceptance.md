@@ -2,9 +2,9 @@
 
 `acceptance-check` 只校验一次验收运行的证据链，不调用模型、不生成回答，也不判断传统理论或现实预测是否成立。manifest 与所有产物放在同一目录树内；绝对路径、越出目录的相对路径、指向目录外的符号链接、文件哈希或大小漂移都会拒绝。response 必须有非空白正文，并执行与报告相同的高风险现实断言窄门禁。case 可额外绑定宿主生成的 `report.json`；一旦提供，还必须同时绑定 `whoami.response-claims.v1` sidecar。验收器会要求 context 是可重算 evidence，以该 evidence 执行当前 `validateReport`，再检查 sidecar 是否逐段覆盖 response 并准确引用 report claim、reasoningRefs 与 premiseStatus。不受支持的 schema、模式与 schema 不匹配、过期证据、错误引用、前提错配、不安全正文或跨产物漂移都会失败。当前新报告使用 v6；无相对时间词的 v5 既有报告仍可重放，v3/v4 只兼容八字单体系历史报告。
 
-每个 case 的 context 可以是 `whoami.evidence.v1`/`whoami.evidence.v2`、未知时辰的 `whoami.chart.v1` needs-input，或带显式年份的 `whoami.error.v1` context error。验收器会以当前引擎重放 input 与 years；错误产物的 code、message、command 或 years 不能伪造，能正常生成 context 的输入也不能冒充失败。错误绑定用于检查宿主是否忠实停下并补问，不把失败结果视为命盘。
+每个 case 的 context 可以是 `whoami.evidence.v1`/`v2`/`v3`、未知时辰的 `whoami.chart.v1` needs-input，或带显式年份的 `whoami.error.v1` context error。验收器会以当前引擎重放 input 与 years；错误产物的 code、message、command 或 years 不能伪造，能正常生成 context 的输入也不能冒充失败。错误绑定用于检查宿主是否忠实停下并补问，不把失败结果视为命盘。
 
-每个 case 的 input 与 context 还会由当前锁定引擎重新计算后做深度比较。可成功计算的完整输入须绑定 `whoami.evidence.v1` 或 `whoami.evidence.v2`，验收器按 context 记录的版本与 granularity 重算（v1 为冻结历史口径，新样例用 v2）；未知时辰可绑定 `whoami.chart.v1` 且状态必须为 `needs-input`；确定性失败须绑定当前引擎重放一致的 `whoami.error.v1`。A 输入配 B context、篡改事实、伪造错误、与当前引擎输出不一致的旧计算结果、把 needs-input 冒充 evidence 都会拒绝。当前合同不接纳任意错误文本或手写摘要作为 context。
+每个 case 的 input 与 context 还会由当前锁定引擎重新计算后做深度比较。可成功计算的完整输入须绑定 `whoami.evidence.v1`、`v2` 或 `v3`，验收器按 context 记录的版本与 granularity 重算（v1、v2 为已发布冻结口径，新样例用 v3）；未知时辰可绑定 `whoami.chart.v1` 且状态必须为 `needs-input`；确定性失败须绑定当前引擎重放一致的 `whoami.error.v1`。A 输入配 B context、篡改事实、伪造错误、与当前引擎输出不一致的旧计算结果、把 needs-input 冒充 evidence 都会拒绝。当前合同不接纳任意错误文本或手写摘要作为 context。
 
 ```json
 {

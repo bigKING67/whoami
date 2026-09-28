@@ -3,6 +3,7 @@ import { ziweiTransforms } from "./ziwei-transforms.js";
 import { ziweiFlyingTransforms } from "./ziwei-flying.js";
 import { wealthReview } from "./wealth-review.js";
 import { patternReview } from "./pattern-review.js";
+import { externalPatternCandidates } from "./external-patterns.js";
 import { InputError } from "./input.js";
 import {
   BRANCH_GROUPS,
@@ -31,19 +32,24 @@ export type Rule = {
   source: string;
 };
 /**
- * v1 是历史冻结口径，仅用于重算既有报告与验收样例；新 context 默认 v2。
+ * v1、v2 是已发布冻结口径，仅用于重算既有报告与验收样例；新 context 默认 v3。
  * v2 相对 v1：新增 cycleRelations、patternReview、flyingTransforms 事实与 R-bazi-pattern-review 规则，
  * 本命 relations 扩展半合、拱合、破、两两相刑与三会（只增不删），R-bazi-timing 与 R-ziwei-transformations
  * 的 factRefs、guidance 随之扩展；其余事实与规则逐字节一致。
+ * v3 相对 v2：patternReview 增加 extendedPatterns（建禄月劫、阳刃），新增 externalPatterns 外格候选事实，
+ * R-bazi-pattern-review 的 factRefs 与 guidance 随之扩展。
  */
-export const EVIDENCE_SCHEMAS = ["whoami.evidence.v1", "whoami.evidence.v2"] as const;
+export const EVIDENCE_SCHEMAS = ["whoami.evidence.v1", "whoami.evidence.v2", "whoami.evidence.v3"] as const;
 export type EvidenceSchema = (typeof EVIDENCE_SCHEMAS)[number];
-export const CURRENT_EVIDENCE_SCHEMA: EvidenceSchema = "whoami.evidence.v2";
+export const CURRENT_EVIDENCE_SCHEMA: EvidenceSchema = "whoami.evidence.v3";
 export const isEvidenceSchema = (value: unknown): value is EvidenceSchema =>
   EVIDENCE_SCHEMAS.includes(value as EvidenceSchema);
 
 export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVIDENCE_SCHEMA) {
-  const v2 = schema === "whoami.evidence.v2";
+  // 版本逐级只增不删：v2 ⊇ v1，v3 ⊇ v2。v1、v2 已发布冻结，见 tests/evidence-freeze.test.ts。
+  const level = EVIDENCE_SCHEMAS.indexOf(schema) + 1;
+  const v2 = level >= 2;
+  const v3 = level >= 3;
   // 流月事实只在 v2 且显式请求月度粒度时加入；v1 为冻结口径，不接受月度粒度。
   const monthly = "granularity" in chart && chart.granularity === "month";
   if (monthly && !v2)
@@ -150,8 +156,15 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
     const patternRef = v2
       ? add(
           id, "bazi", "patternReview", "正官/七杀/印/食神/伤官格候选的显干条件核对（非成败裁定）",
-          patternReview(c.bazi),
+          patternReview(c.bazi, { v3 }),
           "whoami 显干前提检测；条件与引文取《子平真诠》论用神成败救应及各格章节（东篱书斋转录本）",
+        )
+      : null;
+    const externalRef = v3
+      ? add(
+          id, "bazi", "externalPatterns", "外格候选的入口与排除条件（非成格裁定）",
+          externalPatternCandidates(c.bazi),
+          "whoami 干支前提检测；条件与引文取《子平真诠》论外格用舍、论杂格（东篱书斋转录本），无阈值处注明解释",
         )
       : null;
     const roots = c.bazi.pillars
@@ -260,8 +273,11 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
         id: `${id}.R-bazi-pattern-review`,
         candidate: id,
         label: "五格候选分清入口、显干条件与成败",
-        factRefs: [patternRef, monthExposureRef, dm, ...pillarRefs, ...relationRefs],
-        guidance: "先说明月支藏干哪一个十神构成候选、是否透出及有无竞争透干，再逐项引用已出现的支持、风险与救应条件。同一显干组合在不同强弱条件下方向相反时须按条件分支说明，不能只取有利一侧；金水季节、次序例外、合化与位置由宿主论证。不能从组合出现直接输出成格、败格或救应完成。",
+        factRefs: [patternRef, ...(externalRef ? [externalRef] : []), monthExposureRef, dm, ...pillarRefs, ...relationRefs],
+        guidance: "先说明月支藏干哪一个十神构成候选、是否透出及有无竞争透干，再逐项引用已出现的支持、风险与救应条件。同一显干组合在不同强弱条件下方向相反时须按条件分支说明，不能只取有利一侧；金水季节、次序例外、合化与位置由宿主论证。不能从组合出现直接输出成格、败格或救应完成。" +
+          (externalRef
+            ? "建禄月劫与阳刃按禄位、刃位入格，用神另取财官煞食；外格只在正格论证不成立后才讨论，blocked 表示原文排除条件已出现，interpretation 条目是 whoami 的复算定义。"
+            : ""),
         source: "references/analysis.md#五格候选复核",
       });
     rules.push({

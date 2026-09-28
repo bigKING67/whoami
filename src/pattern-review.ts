@@ -1,4 +1,4 @@
-import { element, type Chart } from "./chart.js";
+import { element, hiddenStemsOf, tenGod, type Chart } from "./chart.js";
 
 type Bazi = Chart["candidates"][number]["bazi"];
 
@@ -10,6 +10,12 @@ const SRC = {
   food: "https://donglishuzhai.net/chapter/3750.html",
   killer: "https://donglishuzhai.net/chapter/3752.html",
   hurt: "https://donglishuzhai.net/chapter/3754.html",
+} as const;
+// v3 新增章节单独列出：输出的 sources 在 v2 中不得变化（evidence v2 已冻结）。
+const SRC_V3 = {
+  useGod: "https://donglishuzhai.net/chapter/3721.html",
+  blade: "https://donglishuzhai.net/chapter/3756.html",
+  lu: "https://donglishuzhai.net/chapter/3758.html",
 } as const;
 
 const WEALTH = ["正财", "偏财"];
@@ -24,6 +30,8 @@ type Check = {
   groups: string[][];
   /** 这些十神都不得透出（如“食帶煞而無財”）。 */
   absent?: string[];
+  /** 这些十神的显干须被另一显干五合（不计日干，《论十干合而不合》“合日干不爲合去”）。 */
+  combinedWith?: string[];
   quote: string;
   source: string;
   pending: string;
@@ -100,13 +108,53 @@ const PATTERNS: { id: string; label: string; monthTenGods: string[]; checks: Che
   },
 ];
 
+// 以下两格为 evidence v3 新增：入口按禄位、刃位而非十神（戊日午月为阳刃，但午本气丁为戊之正印）。
+const LU: Record<string, string> = { 甲: "寅", 乙: "卯", 丙: "巳", 丁: "午", 戊: "巳", 己: "午", 庚: "申", 辛: "酉", 壬: "亥", 癸: "子" };
+const BLADE: Record<string, string> = { 甲: "卯", 丙: "午", 戊: "午", 庚: "酉", 壬: "子" };
+const OFFICER_KILLER = ["正官", "七杀"];
+const V3_PATTERNS: { id: string; label: string; checks: Check[] }[] = [
+  {
+    id: "lu", label: "建禄月劫格",
+    checks: [
+      { id: "officer-wealth-seal", category: "support", label: "透官而逢财印", groups: [["正官"], [...WEALTH, ...SEAL]], quote: "透官而逢財印", source: SRC.rescue, pending: "财印是否以官相隔而两不相伤（《论建禄月劫》）须看干位" },
+      { id: "lone-officer", category: "risk", label: "孤官无辅", groups: [["正官"]], absent: [...WEALTH, ...SEAL], quote: "不可孤官無輔", source: SRC_V3.lu, pending: "原文言格局更小，属程度而非破格" },
+      { id: "officer-hurt", category: "risk", label: "用官而透伤食", groups: [["正官"], FOOD_HURT], quote: "若透傷食，便爲破格", source: SRC_V3.lu, pending: "《论用神成败救应》只以透伤为带忌，两说宽严不同" },
+      { id: "officer-hurt-combined", category: "rescue", label: "用官遇伤而伤被合", groups: [["正官"], ["伤官"]], combinedWith: ["伤官"], quote: "用官遇傷而傷被合", source: SRC.rescue, pending: "合是否被间隔或争合破坏须宿主论证" },
+      { id: "wealth-food", category: "support", label: "透财而逢食伤", groups: [WEALTH, FOOD_HURT], quote: "透財而逢食傷", source: SRC.rescue, pending: "转劫生财是否成立须宿主论证" },
+      { id: "wealth-no-food", category: "risk", label: "用财而不透伤食", groups: [WEALTH], absent: FOOD_HURT, quote: "用財而不透傷食，難於發福", source: SRC_V3.lu, pending: "原文另允一财多根者取富" },
+      { id: "wealth-killer", category: "risk", label: "透财而逢煞", groups: [WEALTH, ["七杀"]], quote: "透財而逢煞", source: SRC.rescue, pending: "煞被合则为救（见 wealth-killer-combined）" },
+      { id: "wealth-killer-combined", category: "rescue", label: "用财带煞而煞被合", groups: [WEALTH, ["七杀"]], combinedWith: ["七杀"], quote: "用財帶煞而煞被合", source: SRC.rescue, pending: "合是否成立须宿主论证" },
+      { id: "killer-control", category: "support", label: "透煞而遇制伏", groups: [["七杀"], ["食神"]], quote: "透煞而遇制伏", source: SRC.rescue, pending: "制伏亦可由合与会局完成，只核食神显干" },
+      { id: "food-hurt-only", category: "support", label: "无财官而用伤食泄秀", groups: [FOOD_HURT], absent: [...WEALTH, ...OFFICER_KILLER], quote: "無財官而用傷食，洩其太過", source: SRC_V3.lu, pending: "原文限春木秋金，须结合日主五行（dayMasterElement）与月令论证" },
+      { id: "no-wealth-officer", category: "risk", label: "无财官而透煞印", groups: [["七杀", ...SEAL]], absent: ["正官", ...WEALTH], quote: "無財官，透煞印", source: SRC.rescue, pending: "败格判断仍须看全局" },
+      { id: "officer-killer", category: "risk", label: "官煞竞出", groups: [["正官"], ["七杀"]], quote: "官煞競出，必須取清方爲貴格", source: SRC_V3.lu, pending: "合煞留官或制煞留官是否成立须宿主论证" },
+    ],
+  },
+  {
+    id: "blade", label: "阳刃格",
+    checks: [
+      { id: "officer-killer-wealth-seal", category: "support", label: "透官煞而露财印不见伤官", groups: [OFFICER_KILLER, [...WEALTH, ...SEAL]], absent: ["伤官"], quote: "陽刃透官煞而露財印，不見傷官", source: SRC.rescue, pending: "官煞根深与否（《论阳刃》“官煞露而根深，其貴也大”）未裁定" },
+      { id: "no-officer-killer", category: "risk", label: "阳刃无官煞", groups: [], absent: OFFICER_KILLER, quote: "陽刃無官煞，陽刃格敗也", source: SRC.rescue, pending: "只核显干；藏干官煞须宿主论证" },
+      { id: "officer", category: "support", label: "阳刃用官", groups: [["正官"]], quote: "陽刃用官，透刃不慮", source: SRC_V3.blade, pending: "官是否得力须宿主论证" },
+      { id: "killer-blade", category: "risk", label: "露煞透刃", groups: [["七杀"], ["劫财"]], quote: "陽刃露煞，透刃無成", source: SRC_V3.blade, pending: "阳干之刃与七杀五合，实即合煞；须看位置" },
+      { id: "officer-hurt", category: "risk", label: "透官而又被伤", groups: [["正官"], ["伤官"]], quote: "陽刃透官而又被傷", source: SRC.rescue, pending: "有无印护须宿主论证" },
+      { id: "killer-combined", category: "risk", label: "透煞而又被合", groups: [["七杀"]], combinedWith: ["七杀"], quote: "透煞而又被合", source: SRC.rescue, pending: "合是否成立须宿主论证" },
+      { id: "food-hurt-seal", category: "rescue", label: "带伤食而重印以护", groups: [OFFICER_KILLER, FOOD_HURT, SEAL], quote: "帶傷食而重印以護之", source: SRC.rescue, pending: "印是否“重”不能机械核对" },
+      { id: "wealth", category: "risk", label: "阳刃用财", groups: [WEALTH], absent: OFFICER_KILLER, quote: "陽刃用財，格所不喜", source: SRC_V3.blade, pending: "原文另允财根深而用伤食转刃生财者就富" },
+      { id: "mixed", category: "risk", label: "官煞杂而取清", groups: [["正官"], ["七杀"]], quote: "官煞雜而取清之", source: SRC_V3.blade, pending: "“雜”据中州本校改（原作“輕”）；原文又言“利於留煞”" },
+    ],
+  },
+];
+
 const ROLES = ["main", "middle", "residual"] as const;
+const COMBINE_PAIRS = ["甲己", "乙庚", "丙辛", "丁壬", "戊癸"];
+const isCombine = (a: string, b: string) => COMBINE_PAIRS.some((p) => p === a + b || p === b + a);
 
 /**
  * 正官、七杀、印、食神、伤官五格的显干前提核对（财格见 wealthReview）。
  * 入口只看月支藏干十神；所有检查只报告显干组合是否出现，judgment 恒为 unresolved。
  */
-export function patternReview(bazi: Bazi) {
+export function patternReview(bazi: Bazi, options: { v3?: boolean } = {}) {
   const month = bazi.pillars.find((p) => p.position === "month")!;
   const visible = bazi.pillars.filter((p) => p.position !== "day");
   const exposure = (stem: string) => visible.filter((p) => p.stem === stem).map((p) => p.position);
@@ -118,6 +166,64 @@ export function patternReview(bazi: Bazi) {
   }));
   const at = (gods: string[]) =>
     visible.filter((p) => gods.includes(p.tenGod)).map((p) => ({ position: p.position, stem: p.stem, tenGod: p.tenGod }));
+  // 某十神显干被另一显干五合（不计日干）。
+  const combinedPairs = (gods: string[]) =>
+    visible
+      .filter((p) => gods.includes(p.tenGod))
+      .flatMap((target) =>
+        visible
+          .filter((q) => q.position !== target.position && isCombine(target.stem, q.stem))
+          .map((q) => ({ target: target.position, partner: q.position, stems: target.stem + q.stem })),
+      );
+  const runCheck = (check: Check) => {
+    const groups = check.groups.map((gods) => ({ tenGods: gods, positions: at(gods) }));
+    // presentAt 非空即表示“须不透”的十神实际透出，本项前提因此不成立。
+    const absent = check.absent ? { tenGods: check.absent, presentAt: at(check.absent) } : null;
+    const combined = check.combinedWith ? { tenGods: check.combinedWith, pairs: combinedPairs(check.combinedWith) } : null;
+    const observed =
+      groups.every((g) => g.positions.length) &&
+      (!absent || !absent.presentAt.length) &&
+      (!combined || combined.pairs.length > 0);
+    return {
+      id: check.id,
+      category: check.category,
+      label: check.label,
+      prerequisite: observed ? ("observed" as const) : ("not-observed" as const),
+      groups,
+      ...(absent ? { mustBeAbsent: absent } : {}),
+      ...(combined ? { combined } : {}),
+      quote: check.quote,
+      source: check.source,
+      pending: check.pending,
+    };
+  };
+  // 建禄月劫与阳刃：入口按月支禄位、刃位；月令其他透出藏干即可能的用神入口（《论用神》“別取財官煞食爲用”）。
+  const dayStem = bazi.dayMaster;
+  const monthMainGod = tenGod(dayStem, hiddenStemsOf(month.branch)[0]!);
+  const yang = "甲丙戊庚壬".includes(dayStem);
+  const extendedEntry = (id: string) => {
+    if (id === "blade")
+      return yang && BLADE[dayStem] === month.branch
+        ? [{ kind: "阳刃", branch: month.branch, rule: "禄前一位，惟五阳有之（《论阳刃》，“五”据中州本校改）" }]
+        : [];
+    if (LU[dayStem] === month.branch)
+      return [{ kind: "建禄", branch: month.branch, rule: "月建逢禄堂（《论建禄月劫》）" }];
+    return !yang && monthMainGod === "劫财"
+      ? [{ kind: "月劫", branch: month.branch, rule: "阴干月令本气为劫财（阳干同位为阳刃）" }]
+      : [];
+  };
+  const extendedPattern = (pattern: (typeof V3_PATTERNS)[number]) => {
+    const entry = extendedEntry(pattern.id);
+    const inScope = entry.length > 0;
+    return {
+      id: pattern.id,
+      label: pattern.label,
+      status: inScope ? ("candidate-only" as const) : ("outside-scope" as const),
+      entry,
+      useGodCandidates: inScope ? hidden.filter((h) => !["比肩", "劫财"].includes(h.tenGod) && h.exposedAt.length) : [],
+      checks: inScope ? pattern.checks.map(runCheck) : [],
+    };
+  };
   return {
     scope: "月支藏干定正官/七杀/印/食神/伤官候选；仅核对年/月/时显干组合，不含日干",
     monthBranch: month.branch,
@@ -135,29 +241,12 @@ export function patternReview(bazi: Bazi) {
         competingExposed: inScope
           ? hidden.filter((h) => !pattern.monthTenGods.includes(h.tenGod) && h.exposedAt.length)
           : [],
-        checks: inScope
-          ? pattern.checks.map((check) => {
-              const groups = check.groups.map((gods) => ({ tenGods: gods, positions: at(gods) }));
-              // presentAt 非空即表示“须不透”的十神实际透出，本项前提因此不成立。
-              const absent = check.absent ? { tenGods: check.absent, presentAt: at(check.absent) } : null;
-              const observed = groups.every((g) => g.positions.length) && (!absent || !absent.presentAt.length);
-              return {
-                id: check.id,
-                category: check.category,
-                label: check.label,
-                prerequisite: observed ? ("observed" as const) : ("not-observed" as const),
-                groups,
-                ...(absent ? { mustBeAbsent: absent } : {}),
-                quote: check.quote,
-                source: check.source,
-                pending: check.pending,
-              };
-            })
-          : [],
+        checks: inScope ? pattern.checks.map(runCheck) : [],
       };
     }),
+    ...(options.v3 ? { extendedPatterns: V3_PATTERNS.map((pattern) => extendedPattern(pattern)) } : {}),
     judgment: "unresolved" as const,
-    sources: { ...SRC },
+    sources: options.v3 ? { ...SRC, ...SRC_V3 } : { ...SRC },
     limits: [
       "候选只表示月支藏有该十神；本气、中气、余气与是否透出并列给出，透干优先与会支化格（《论用神变化》）须宿主另证。",
       "observed 只表示显干组合出现；支持、风险与救应可同时成立，不计分、不抵消、不多数表决。同一组合在不同强弱条件下方向相反时两行并列。",

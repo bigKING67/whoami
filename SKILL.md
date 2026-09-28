@@ -27,7 +27,7 @@ description: 八字、紫微斗数排盘与有依据的解读。用于提供出�
 - 下旺衰、扶抑或喜忌判断时，按[普通格分析链](references/strength-balance.md)审查支持、负荷与反证，给出有取法依据的条件性结论。
 - 涉及大运、流年或流月时，完整读取[八字岁运联读](references/bazi-timing.md)；岁运关系直接取 `cycleRelations`/`monthlyCycles`，不自行重算。
 - 紫微流年、流月主题须按当期宫职定位到本命物理宫再联读三方四正，不能用本命联宫或其他时段、其他主题的宫位代替。
-- 问格局、用神或成格与否时，按分析契约的财格与五格复核一节引用 `wealthReview`、`patternReview`：只能确认候选入口，成格、败格与救应须论证，不得写成已成立；`rule-review` 是同一内容的 Markdown 视图。
+- 问格局、用神或成格与否时，按分析契约的财格、五格、建禄阳刃与外格复核引用 `wealthReview`、`patternReview`、`externalPatterns`（外格须先论证正格不成立）：只能确认候选入口，成格、败格与救应须论证，不得写成已成立；`rule-review` 是同一内容的 Markdown 视图。
 - 引用紫微宫干飞化、自化（`flyingTransforms`）时写明化出宫、落入宫与十干四化口径；自化象意各派不一，须标为流派说法。
 - 含相对时间、月份、半年、日期、钟点、时区、区间或重复日程时，读[时间契约](references/time.md)。默认 evidence 只到年度；月度只能写成“YYYY年八字流月<干支>（起节至止节）”“YYYY年紫微流月<干支>（农历X月）”，先给年、运判断再叠加流月；周、日判断须停下。
 

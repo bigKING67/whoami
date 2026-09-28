@@ -522,7 +522,10 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
     const hasTopicEvidence = {
       strength:
         hasFact(".bazi.month") && hasFact(".bazi.rootDetails"),
-      pattern: hasFact(".bazi.monthExposure") || hasFact(".bazi.patternReview"),
+      pattern:
+        hasFact(".bazi.monthExposure") ||
+        hasFact(".bazi.patternReview") ||
+        hasFact(".bazi.externalPatterns"),
       climate: hasFact(".bazi.month"),
       balance:
         hasFact(".bazi.rootDetails") || hasFact(".bazi.relations"),
@@ -530,6 +533,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
         hasFact(".bazi.monthExposure") ||
         hasFact(".bazi.wealthReview") ||
         hasFact(".bazi.patternReview") ||
+        hasFact(".bazi.externalPatterns") ||
         hasFact(".bazi.rootDetails"),
       "bazi-timing": hasFact(".bazi.cycles"),
     }[typedTopic];

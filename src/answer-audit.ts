@@ -20,7 +20,7 @@ const TRIGGERS: Record<Exclude<Kind, "fact">, RegExp> = {
 };
 // 各 kind 至少须引用的事实（按 id 后缀）。日主等每盘都有的事实不能单独支撑格局判断。
 const REQUIRED_FACTS: Record<Exclude<Kind, "event" | "fact">, RegExp> = {
-  pattern: /\.bazi\.(?:patternReview|wealthReview|monthExposure|rootDetails)$/u,
+  pattern: /\.bazi\.(?:patternReview|externalPatterns|wealthReview|monthExposure|rootDetails)$/u,
   timing: /\.(?:bazi\.(?:cycles|cycleRelations|monthlyCycles)|ziwei\.(?:cycles|transformations|monthly))$/u,
   palace: /\.ziwei\.(?:palace-\d+|cycles|monthly|transformations)$/u,
 };
