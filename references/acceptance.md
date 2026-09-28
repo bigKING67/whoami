@@ -151,18 +151,19 @@ finalize 会重新生成请求、核对 payload 并验证签名，返回 `whoami
 
 受信宿主编排器须解码 `serializedReceipt.data`，核对 sha256/bytes，并用自身具备的目录句柄或事务性、不覆盖写入机制保存为 receipt；再把实际相对 path 与这里的 sha256/bytes 填入 `manifest.runtime.receipt`。最后运行 `acceptance-check --trusted-runtime-key ...`。文件落盘安全属于编排器边界；任何 artifact、review、runtime、request 或最终 receipt 漂移仍会被 whoami 拒绝。
 
-## CI 签发的生成来源回执（v3）
+## CI 签发的生成与评审回执（v3）
 
-`whoami.runtime-receipt.v3` 由 GitHub Actions 工作流在运行内经 Sigstore 签发（设计见 [运行回执方案](../docs/research/runtime-attestation-sigstore.md)）。它与 v2 绑定相同的 Skill、任务、量表与逐 case 产物，但签名载荷（`whoami.generation-attestation.v1`）**不含 review**：review 由维护者在签发后完成，结果中会标注“review 为维护者事后评审，未经独立签发”。核验时必须由核验者给出期望身份：
+`whoami.runtime-receipt.v3` 由两个 GitHub Actions 工作流经 Sigstore 签发（设计见 [运行回执方案](../docs/research/runtime-attestation-sigstore.md)）：生成工作流签发 `whoami.generation-attestation.v1`（Skill、任务、量表、逐 case 产物、运行时、源码提交与实际出现的模型），review 工作流签发 `whoami.review-attestation.v1`（生成载荷摘要、量表与 review）。只有两份签发都有效、证书中的运行 ID 与源码提交与回执一致、review 为 PASS 时才是 `verified`；只有生成签发时结果为 `partial`。review 内容仍是维护者人工评审。核验时必须由核验者给出期望身份：
 
 ```sh
 node dist/cli.js acceptance-check --manifest <out>/manifest.json \
   --sigstore-repo bigKING67/whoami \
   --sigstore-workflow bigKING67/whoami/.github/workflows/forward-attest.yml \
-  --sigstore-ref refs/heads/main
+  --sigstore-ref refs/heads/main \
+  --sigstore-review-workflow bigKING67/whoami/.github/workflows/forward-review.yml
 ```
 
-验收器重算载荷并比对 `payloadSha256`，再调用 `gh attestation verify` 核对签名、证书链与签发工作流身份；缺少期望身份、签发无效或任何产物改动都拒绝。只有合成资料套件可以进入该工作流。
+验收器重算两份载荷并比对摘要，再调用 `gh attestation verify` 核对签名、证书链与工作流身份；缺少期望身份、签发无效、运行 ID 或源码提交不符、清单 review 与签发不一致都拒绝；gh 未登录、网络或超时报环境错误而非伪造。只有合成资料套件可以进入这些工作流。
 
 ## Codex 宿主证据边界
 

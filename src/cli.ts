@@ -34,7 +34,7 @@ const HELP = `whoami（本地核心，不调用模型 API）
   benchmark-score --key <answers.json> --predictions <predictions.json>
   attestation-prepare --manifest <draft-manifest.json> --run <runtime-run.json>
   attestation-finalize --manifest <draft-manifest.json> --request <request.json> --signature <signature.txt> --trusted-runtime-key <ed25519-public.pem>
-  acceptance-check --manifest <manifest.json> [--trusted-runtime-key <ed25519-public.pem>] [--sigstore-repo <owner/repo> --sigstore-workflow <owner/repo/.github/workflows/x.yml> --sigstore-ref <refs/heads/main>]
+  acceptance-check --manifest <manifest.json> [--trusted-runtime-key <ed25519-public.pem>] [--sigstore-repo <owner/repo> --sigstore-workflow <owner/repo/.github/workflows/x.yml> --sigstore-ref <refs/heads/main> [--sigstore-review-workflow <owner/repo/.github/workflows/y.yml>]]
 --granularity month 额外输出八字节气流月与紫微农历流月；同一报告的 context、report-template、report-check、render 与 answer-check 须使用相同的 years 与 granularity。
 JSON 输入使用文件或 --input - 从 stdin 读取。正常结果到 stdout，错误到 stderr。
 chart 返回 needs-input 时退出 2；ambiguous 返回 0 但不能按唯一盘解读。
@@ -70,7 +70,7 @@ function run() {
       "signature",
       "trusted-runtime-key",
     ],
-    "acceptance-check": ["manifest", "trusted-runtime-key", "sigstore-repo", "sigstore-workflow", "sigstore-ref"],
+    "acceptance-check": ["manifest", "trusted-runtime-key", "sigstore-repo", "sigstore-workflow", "sigstore-ref", "sigstore-review-workflow"],
   };
   if (!allowed[command])
     throw new InputError("UNKNOWN_COMMAND", `未知命令 ${command}`);
@@ -147,7 +147,12 @@ function run() {
     if (parts.every((v) => v === undefined)) return undefined;
     if (parts.some((v) => v === undefined))
       throw new InputError("INVALID_ARGUMENT", "--sigstore-repo、--sigstore-workflow、--sigstore-ref 须同时提供");
-    return { repo: parts[0]!, signerWorkflow: parts[1]!, sourceRef: parts[2]! };
+    return {
+      repo: parts[0]!,
+      signerWorkflow: parts[1]!,
+      sourceRef: parts[2]!,
+      ...(opts["sigstore-review-workflow"] ? { reviewWorkflow: opts["sigstore-review-workflow"] } : {}),
+    };
   };
   if (command === "acceptance-check") {
     const manifestPath = required("manifest");

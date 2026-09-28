@@ -1,7 +1,10 @@
-# 草稿：真实宿主前向验收与 Sigstore 签发。设计见 ../runtime-attestation-sigstore.md。
-# 放在 docs/ 下不会被 GitHub Actions 加载；在仓库 Settings → Environments 建好 forward-attest
-# （必需审批人 + ANTHROPIC_API_KEY secret）后，再移入 .github/workflows/forward-attest.yml。
+# 草稿：真实宿主前向验收的生成与签发。设计见 ../runtime-attestation-sigstore.md。
+# 放在 docs/ 下不会被 GitHub Actions 加载；建好 Environment forward-attest（必需审批人 +
+# ANTHROPIC_API_KEY secret）后，再移入 .github/workflows/forward-attest.yml。
 # 只能运行 suites/forward-attest 下 synthetic:true 的合成资料：日志、产物与 Rekor 记录均公开。
+#
+# 两个 job 隔离：generate 持有 API key、运行模型，但没有 OIDC 签发权限；
+# attest 没有 API key、不运行模型，只按落盘产物重算载荷后签发。
 name: Forward attest
 
 on:
@@ -14,20 +17,19 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 concurrency:
   group: forward-attest
   cancel-in-progress: false
 
 jobs:
-  run:
-    name: Run host and attest
+  generate:
+    name: Run host
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Environment 须设必需审批人；API key 只作为该 Environment 的 secret 暴露给本 job。
     environment: forward-attest
+    permissions:
+      contents: read
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +51,42 @@ jobs:
         run: |
           case "$SUITE" in *[!a-z0-9-]*|"") echo "非法套件 id" && exit 1;; esac
           node scripts/forward-run.mjs --suite "suites/forward-attest/$SUITE" --out out --host claude
+      - name: Upload generation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generation
+          path: out/
+          if-no-files-found: error
+
+  attest:
+    name: Attest generation
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Install locked dependencies and build
+        run: npm ci --ignore-scripts && npm run build
+      - name: Download generation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: generation
+          path: out
+      # 不信任生成 job 写出的 payload.bin：按落盘产物重算。
+      - name: Recompute payload from artifacts
+        run: node scripts/forward-run.mjs --repayload out
       - name: Attest generation payload
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -58,7 +96,7 @@ jobs:
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: node scripts/forward-run.mjs --finalize out --bundle "$BUNDLE"
-      - name: Upload artifacts
+      - name: Upload attested artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: forward-attest-${{ github.run_id }}

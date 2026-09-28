@@ -63,11 +63,22 @@ GitHub artifact attestation 由 GitHub Actions 的 OIDC 身份经 Sigstore（Ful
 
 `--trusted-runtime-key` 与 v2 流程保持不变；v3 用新参数 `--trusted-sigstore-identity` 指定期望身份，不能由 manifest 自带身份自证。
 
+## 审查后的修订（2026-09-28）
+
+代码审查指出两处设计漏洞，已修正：
+
+1. **review 未签发导致 verified 可伪造**：只签生成来源时，任何人都可把清单里的 review 从 FAIL 改为 PASS。现在 review 必须经第二个工作流 [forward-review.yml](drafts/forward-review.yml) 在 CI 内签发：维护者手动触发并以输入提交 review，工作流先核验生成签发，再对“生成载荷摘要 + 量表哈希 + review”签发（`whoami.review-attestation.v1`）。v3 只有生成与 review 两份签发都有效才可能 `verified`；review 内容仍是维护者人工评审，结果中如实标注。
+2. **模型与签发权限同处一个 job**：模型可用 Bash 改写产物或读取 OIDC 请求变量。现在拆为两个 job：`generate` 持有 API key、运行模型、无签发权限；`attest` 无 API key、不运行模型，先核对 Skill 快照、task、rubric、输入与提交中的原件逐字节一致、context 可由 CLI 重算，再从落盘产物重算载荷后签发。模型能影响的只剩它自己的答复与事件流。
+
+另外：签发载荷绑定源码提交与宿主事件流中实际出现的全部模型（`observedModels`）；核验时比对证书中的运行 ID 与源码提交；`gh` 未登录、网络或超时等环境问题单独报错，不误报为伪造；context 失败时在调用模型前中止。
+
 ## 已定决定与进度
 
-- 宿主：Claude Code（`claude -p --output-format stream-json`，固定 2.1.283，套件固定模型与 `--max-turns`，工具只放行 `Read` 与 `node dist/cli.js`）。
-- 验证：`acceptance-check --sigstore-repo … --sigstore-workflow … --sigstore-ref …`，内部调用 `gh attestation verify`（需要网络与 gh CLI）。
-- 已实现：`scripts/forward-run.mjs`（运行、合成资料守卫、回放模式、`--finalize` 回填 bundle）、`whoami.runtime-receipt.v3` 与 `generationAttestationPayload`、`acceptance-check` 的 v3 核验（验证器可注入测试）、首个套件 `suites/forward-attest/attest-001`。回放测试覆盖 verified、身份缺失、签发无效与产物改动。
-- 待你操作：在 Settings → Environments 新建 `forward-attest`，设必需审批人（你本人），添加 secret `ANTHROPIC_API_KEY`。完成后告知，我把 [drafts/forward-attest.yml](drafts/forward-attest.yml) 移入 `.github/workflows/`，由你手动触发首跑。
-- 首跑后：下载产物，按 rubric 填写 manifest.review，运行
-  `node dist/cli.js acceptance-check --manifest <out>/manifest.json --sigstore-repo bigKING67/whoami --sigstore-workflow bigKING67/whoami/.github/workflows/forward-attest.yml --sigstore-ref refs/heads/main`，预期 `verified`，并写质量记录。
+- 宿主：Claude Code 2.1.283，套件固定模型与 `--max-turns`，工具只放行 `Read` 与 `node dist/cli.js`。
+- 验证：`acceptance-check --sigstore-repo bigKING67/whoami --sigstore-workflow bigKING67/whoami/.github/workflows/forward-attest.yml --sigstore-ref refs/heads/main --sigstore-review-workflow bigKING67/whoami/.github/workflows/forward-review.yml`，内部调用 `gh attestation verify`（需要网络与已登录的 gh）。
+- 已实现并用回放测试覆盖：runner（生成、重算载荷与签发前核对、回填、review 写入与回填）、v3 回执与两种载荷、`acceptance-check` 的双签发核验。
+- **待你操作**：
+  1. Settings → Environments 新建 `forward-attest`：勾选 Required reviewers（你本人），添加 secret `ANTHROPIC_API_KEY`。
+  2. 再新建 `forward-review`：勾选 Required reviewers（你本人），不需要 secret。
+  3. 告诉我完成后，我把两个草稿移入 `.github/workflows/`。
+- **首跑流程**：手动触发 Forward attest（套件 `attest-001`）→ 下载 `forward-attest-<run id>` 产物，按 rubric 阅读两个 case 的答复 → 手动触发 Forward review，填生成运行 ID 与 review JSON → 下载 `forward-review-<run id>`，本地运行上面的 acceptance-check，预期 `verified`（review 为 PASS 时）。

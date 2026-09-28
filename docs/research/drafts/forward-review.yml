@@ -1,0 +1,80 @@
+# 草稿：维护者 review 的 CI 签发。设计见 ../runtime-attestation-sigstore.md。
+# 放在 docs/ 下不会被加载；建好 Environment forward-review（必需审批人）后移入 .github/workflows/forward-review.yml。
+# review 内容仍是维护者人工评审；签发只让它在签发后不可改写，并绑定到一次已签发的生成载荷。
+name: Forward review
+
+on:
+  workflow_dispatch:
+    inputs:
+      generation_run_id:
+        description: "forward-attest 工作流的运行 ID"
+        required: true
+        type: string
+      review:
+        description: '按 rubric 填写的 JSON，如 {"status":"PASS","factErrors":0,"premiseOmissions":0,"candidateMixing":0,"unsupportedTimingClaims":0,"unsafeClaims":0}'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Attest review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: forward-review
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Install locked dependencies and build
+        run: npm ci --ignore-scripts && npm run build
+      - name: Download attested generation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: forward-attest-${{ inputs.generation_run_id }}
+          path: out
+          run-id: ${{ inputs.generation_run_id }}
+          github-token: ${{ github.token }}
+      # 先确认生成载荷确由 forward-attest 在 main 上签发，再为其签发 review。
+      - name: Verify generation attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify out/payload.bin --bundle out/attestation.sigstore.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/forward-attest.yml" \
+            --source-ref refs/heads/main
+      - name: Write review
+        env:
+          REVIEW: ${{ inputs.review }}
+        run: |
+          printf '%s' "$REVIEW" > review.json
+          node scripts/forward-run.mjs --review out --review-json review.json
+      - name: Attest review payload
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/review-payload.bin
+      - name: Attach review bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: node scripts/forward-run.mjs --finalize-review out --bundle "$BUNDLE"
+      - name: Upload reviewed artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forward-review-${{ github.run_id }}
+          path: out/
+          if-no-files-found: error
