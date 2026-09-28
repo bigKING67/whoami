@@ -4,11 +4,12 @@
 
 ## 公开模块接口
 
-`report-time.ts` 只向报告层公开三个函数：
+`report-time.ts` 只向报告层公开四个函数：
 
 - `validIsoDate(value)`：验证 v6 `timeReference.asOfDate` 是否为真实的 `YYYY-MM-DD` 公历日期。
 - `referencedRelativeYears(text, referenceYear)`：把“今年/本年/明年/后年/去年/前年”解析为去重、升序的公历年份；没有冻结基准时返回空数组，由报告 schema 兼容逻辑决定后续错误。
-- `validateReportTemporalText(text, label, evidenceYears, referenceYear, context?)`：按本文件顺序检查一段最终可见文本；成功时原样返回 text，失败时抛出带稳定 `code` 的 `InputError`。可选 context 由报告层传入字段 role（prose/title/reality-source）、冻结 asOfDate 与已校验 birth 输入；省略时保持严格行为，label 只用于报错，不授予例外。
+- `monthlyLabelMentions(text)`：列出文本中的流月标签（可选年份前缀、体系、干支、括号起止说明），供报告层判断正文是否须引用对应体系的流月事实；校验本身仍在下一个函数中完成。
+- `validateReportTemporalText(text, label, evidenceYears, referenceYear, context?)`：按本文件顺序检查一段最终可见文本；成功时原样返回 text，失败时抛出带稳定 `code` 的 `InputError`。可选 context 由报告层传入字段 role（prose/title/reality-source）、冻结 asOfDate、已校验 birth 输入，以及月度 evidence 的流月标签表 monthlyLabels；省略时保持严格行为，label 只用于报错，不授予例外。
 
 `report.ts` 不自行维护另一套日期、时区、DST、区间或重复日程解析逻辑。新增时间规则时先明确所属阶段、错误优先级、资料性例外和 evidence 要求，再同步实现、边界测试与本文件；不能只加正则或只改提示文案。
 
@@ -28,7 +29,9 @@ v6 报告以 `timeReference: {"asOfDate":"YYYY-MM-DD","timeZone":"IANA 时区"}`
 
 ## 年度以下粒度
 
-当前 context/evidence 只提供年度层，没有流月、流日或精确节气事件链。“上半年/下半年/年初/年中/年底/年末”、季度、这个月/下个月/月初/月末、本周/下周，以及“三个月内/未来十天”等细分时间返回 `UNSUPPORTED_TIME_GRANULARITY`。宿主须退回“2027 年度主题”等明确年度表达，或先接入与报告合同一致的细粒度 evidence；不能从年度四化、大限或主题宫生成月份、星期、日期或事件窗口。“月份资料尚未提供”“流月与流日未计算”等边界说明继续允许。
+默认 context/evidence 只提供年度层；以 `--granularity month` 计算时另含八字节气流月与紫微农历流月，仍没有流日或钟点。“上半年/下半年/年初/年中/年底/年末”、季度、这个月/下个月/月初/月末、本周/下周，以及“三个月内/未来十天”等细分时间返回 `UNSUPPORTED_TIME_GRANULARITY`。宿主须退回“2027 年度主题”等明确年度表达，或先接入与报告合同一致的细粒度 evidence；不能从年度四化、大限或主题宫生成月份、星期、日期或事件窗口。“月份资料尚未提供”“流月与流日未计算”等边界说明继续允许。
+
+月度 evidence 只接受带体系与干支的流月标签：“八字流月甲午（芒种至小暑）”“紫微流月癸未（农历六月）”。标签必须存在于当前 evidence 的流月中，否则返回 `MONTH_NOT_IN_EVIDENCE`；年度 evidence 中出现流月标签返回 `UNSUPPORTED_TIME_GRANULARITY` 并要求以月度粒度重算。公历“7 月”、相对“下个月”即使在月度 evidence 下也继续拒绝：公历月可能跨两个节气月或农历月，须改写为体系流月并写明其节气或农历起止。两体系流月边界不同，不能把同名月份视为同一时段；八字流月不接受整月以下的节气内时点判断，紫微闰月按 evidence 标注的口径分段且须保留另一派分支。
 
 “2027 年 3 月、3 月 15 日、三月十五日、周一、星期五”等 evidence 年份内或没有年份的绝对月日星期同样返回 `UNSUPPORTED_TIME_GRANULARITY`。早于冻结报告年份且不在 `evidence.years` 的历史年月可在 title/reality-source 角色下作为非预测性来源说明；八字与紫微来源字段使用相同角色。正文中的出生日期和有归属的历史转述须满足下述窄例外，也不因此获得现实事件证明。“明年春节、2027 年立春、立春当天、清明那天”等命名历法点返回 `UNSUPPORTED_CALENDAR_POINT`，须先明确对应公历日期、历法与时区口径，再接入日级 evidence。裸的“八字年度边界按立春、紫微按农历新年”只说明体系口径，继续允许。
 

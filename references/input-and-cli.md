@@ -38,6 +38,8 @@ node dist/cli.js answer-check --input examples/birth.json --years 2026 --as-of 2
 
 `answer-check` 用于快速档纯文本答复：`--text` 为文本文件或 `-`（stdin，避免落盘真人答复）；`--as-of` 是按用户报告时区冻结的 YYYY-MM-DD，答复含相对年份时必须提供。它复用报告的高风险措辞、未决前提升级与时间规则，并在单候选时核对流年主题宫位集合；成功输出 `status: valid` 与 chartId/evidenceId，失败按下述错误契约退出 1。它不读取报告、不证明解释语义，也不替代完整报告的 `report-check`。
 
+`--granularity month`（chart/context/rule-review/report-template/report-check/render/answer-check）额外输出 `.bazi.monthlyCycles` 与 `.ziwei.monthly`，并在 context 中记录 `granularity: "month"`；不加时输出与年度 v2 逐字节相同。同一报告的各命令必须使用相同的 years 与 granularity，否则 evidenceId 不匹配。
+
 `context` 默认输出 `whoami.evidence.v2`，相对 v1 只新增 `.bazi.cycleRelations`（流年、当年大运与本命的干支关系）及其在 `R-bazi-timing` 中的关联，共有事实逐字节不变。`report-check`/`render` 按报告绑定的 evidenceId 自动选用 v1 或 v2 重算，并在结果中返回 `evidenceSchema`；v1 只为既有报告与验收样例保留，新报告一律基于 v2。
 
 `report-template` 当前输出 v6，`timeReference.asOfDate` 与 `timeReference.timeZone` 留空等待宿主填写。填写报告实际采用的本地公历日期与 IANA 时区后再运行 `report-check`；不能把模板空值直接当成有效报告，也不能用系统读取时刻替换已经冻结的报告基准。
@@ -67,7 +69,7 @@ before/after 至多一侧可以是 `-` 从stdin读，不能两侧共用一次std
 - 起运使用 lunar-typescript Yun sect=2，以绝对出生时刻至节的间隔计算；不以校正后的太阳时重复移动出生瞬间。起运日期是传统换算法结果，不能解释为可验证事件发生日。
 - 同一候选四柱可以覆盖多个分钟样本，起运仍会随实际出生时刻移动。`cycles` 顶层值只是一条代表样本；`cycles.uncertainty` 给出样本数、出生偏移、太阳时偏移及起运最早/最晚范围。status=range 时报告必须写范围，不能只引用代表值。
 - 紫微：全书派，农历年分界，闰月前半/后半分配，虚岁按年份；子初 forward、午夜 current。太阳时跨日会按校正日期派生紫微农历，是 whoami 的明确约定，不代表唯一流派。
-- 紫微流年以农历新年，八字以立春；同一“2026年”边界可能不同。只输出年度层，未输出流月/流日。
+- 紫微流年以农历新年，八字以立春；同一“2026年”边界可能不同。默认只输出年度层；`--granularity month` 另输出八字节气流月与紫微农历流月，仍不输出流日或钟点。
 
 ## 维护入口
 

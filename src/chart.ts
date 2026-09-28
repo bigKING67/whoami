@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Temporal } from "@js-temporal/polyfill";
-import { Solar } from "lunar-typescript";
+import { Lunar, Solar } from "lunar-typescript";
 import iztro from "iztro";
 import { parseInput, type BirthInput, InputError } from "./input.js";
 import { resolveBirth, timeAt, SOLAR_SCREENING_MINUTES } from "./time.js";
@@ -96,10 +96,14 @@ function baziAt(input: BirthInput, instant: Temporal.Instant, solarShift = 0) {
     beijing,
   };
 }
+export type Granularity = "year" | "month";
+const LUNAR_MONTH_NAMES = ["正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"];
+
 export function ziweiAt(
   clock: Temporal.PlainDateTime,
   input: BirthInput,
   years: number[],
+  granularity: Granularity = "year",
 ) {
   const settings = {
     yearDivide: "normal",
@@ -184,7 +188,56 @@ export function ziweiAt(
           decadalPalaceIndex: h.decadal.index,
         };
       }),
+    ...(granularity === "month" ? { monthly: ziweiMonthly(c, years.filter((y) => y >= birthLunarYear)) } : {}),
   };
+}
+
+/**
+ * 紫微流月直接取 iztro monthlyList（fixLeap=true：闰月 1–15 日归上月、16 日起归下月），
+ * 只补公历起止与四化落宫。另一派把整个闰月归上月，因此闰月两段均标 leapConvention。
+ */
+function ziweiMonthly(c: ReturnType<typeof iztro.astro.bySolar>, years: number[]) {
+  const starPalaces = (star: string) =>
+    c.palaces
+      .filter((p) => [...p.majorStars, ...p.minorStars].some((s) => s.name === star))
+      .map((p) => p.index);
+  const solarOf = (year: number, month: number, leap: boolean, day: number) =>
+    Lunar.fromYmd(year, leap ? -month : month, day).getSolar();
+  return years.flatMap((year) =>
+    c.monthlyList(year, true).map((m) => {
+      const name = LUNAR_MONTH_NAMES[m.month - 1]!;
+      const leap = m.isLeapMonth ? (m.part === "first" ? ("first-half" as const) : ("second-half" as const)) : (false as const);
+      const [fromDay, toDay] = m.dayRange;
+      return {
+        year,
+        lunarMonth: m.month,
+        label: m.isLeapMonth ? `闰${name}月${m.part === "first" ? "上半" : "下半"}` : `${name}月`,
+        leap,
+        ...(leap
+          ? { leapConvention: "iztro：闰月 1–15 日归上月、16 日起归下月；另一派整月归上月" }
+          : {}),
+        solarStart: solarOf(year, m.month, m.isLeapMonth, fromDay).toYmd(),
+        solarEndExclusive: solarOf(year, m.month, m.isLeapMonth, toDay).next(1).toYmd(),
+        stem: m.heavenlyStem,
+        branch: m.earthlyBranch,
+        lifePalaceIndex: m.index,
+        palaceNames: m.palaceNames,
+        // 与流年四化一致：给出本命物理宫及其在当月承担的宫职。
+        transformations: m.mutagen.map((star, i) => ({
+          mutagen: "禄权科忌"[i]!,
+          star,
+          targets: starPalaces(star).map((index) => ({
+            palaceIndex: index,
+            natalPalace: c.palaces[index]!.name,
+            scopePalace: m.palaceNames[index] ?? null,
+          })),
+        })),
+        stars: (m.stars ?? []).flatMap((list, palaceIndex) =>
+          list.map((st) => ({ name: st.name, palaceIndex })),
+        ),
+      };
+    }),
+  );
 }
 function cycles(
   input: BirthInput,
@@ -231,7 +284,7 @@ function cycles(
     })),
   };
 }
-export function buildChart(raw: unknown, years?: number[]) {
+export function buildChart(raw: unknown, years?: number[], granularity: Granularity = "year") {
   const input = parseInput(raw);
   const centerYear = Temporal.Now.plainDateISO("Asia/Shanghai").year;
   const resolvedYears = [
@@ -365,7 +418,7 @@ export function buildChart(raw: unknown, years?: number[]) {
           uncertainty: cycleUncertainty(samples, cycleSamples),
         },
       },
-      ziwei: ziweiAt(data.clock, input, resolvedYears),
+      ziwei: ziweiAt(data.clock, input, resolvedYears, granularity),
     }),
   );
   const warnings: string[] = [];
@@ -400,6 +453,8 @@ export function buildChart(raw: unknown, years?: number[]) {
     policy,
     engines: ENGINE,
     years: resolvedYears,
+    // 月度粒度按需开启；年度输出不含此字段，保持既有 chart/context 字节不变。
+    ...(granularity === "month" ? { granularity } : {}),
     questions: [],
     warnings,
     time: nominal.audit,

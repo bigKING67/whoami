@@ -22,19 +22,20 @@ import {
 
 const HELP = `whoami（本地核心，不调用模型 API）
   validate --input <birth.json>
-  chart --input <birth.json> [--years 2024,2025,2026]
-  context --input <birth.json> [--years ...]
+  chart --input <birth.json> [--years 2024,2025,2026] [--granularity year|month]
+  context --input <birth.json> [--years ...] [--granularity year|month]
   rule-review --input <birth.json> [--years ...]  （财格规则复核 Markdown）
   compare --before <birth.json> --after <birth.json> [--years ...] [--before-candidate <ID>] [--after-candidate <ID>]
-  report-template --input <birth.json> [--mode combined|bazi|ziwei] [--years ...]
-  report-check --input <birth.json> --report <report.json> [--years ...]
-  answer-check --input <birth.json> --text <answer.md> [--years ...] [--as-of YYYY-MM-DD]  （快速档纯文本答复门禁）
-  render --input <birth.json> --report <report.json> [--years ...]
+  report-template --input <birth.json> [--mode combined|bazi|ziwei] [--years ...] [--granularity year|month]
+  report-check --input <birth.json> --report <report.json> [--years ...] [--granularity year|month]
+  answer-check --input <birth.json> --text <answer.md> [--years ...] [--as-of YYYY-MM-DD] [--granularity year|month]  （快速档纯文本答复门禁）
+  render --input <birth.json> --report <report.json> [--years ...] [--granularity year|month]
   benchmark-prepare --dataset <data.json> --output-dir <private-dir> [--seed whoami-v1] [--astro <fortune_api_results.json>]
   benchmark-score --key <answers.json> --predictions <predictions.json>
   attestation-prepare --manifest <draft-manifest.json> --run <runtime-run.json>
   attestation-finalize --manifest <draft-manifest.json> --request <request.json> --signature <signature.txt> --trusted-runtime-key <ed25519-public.pem>
   acceptance-check --manifest <manifest.json> [--trusted-runtime-key <ed25519-public.pem>]
+--granularity month 额外输出八字节气流月与紫微农历流月；同一报告的 context、report-template、report-check、render 与 answer-check 须使用相同的 years 与 granularity。
 JSON 输入使用文件或 --input - 从 stdin 读取。正常结果到 stdout，错误到 stderr。
 chart 返回 needs-input 时退出 2；ambiguous 返回 0 但不能按唯一盘解读。
 benchmark-prepare 是唯一显式写文件命令，不覆盖已有文件；attestation-finalize 只向 stdout 返回已验签回执及其精确序列化字节。
@@ -52,14 +53,14 @@ function run() {
   }
   const allowed: Record<string, string[]> = {
     validate: ["input"],
-    chart: ["input", "years"],
-    context: ["input", "years"],
+    chart: ["input", "years", "granularity"],
+    context: ["input", "years", "granularity"],
     "rule-review": ["input", "years"],
     compare: ["before", "after", "years", "before-candidate", "after-candidate"],
-    "report-template": ["input", "years", "mode"],
-    "report-check": ["input", "years", "report"],
-    "answer-check": ["input", "years", "text", "as-of"],
-    render: ["input", "years", "report"],
+    "report-template": ["input", "years", "mode", "granularity"],
+    "report-check": ["input", "years", "report", "granularity"],
+    "answer-check": ["input", "years", "text", "as-of", "granularity"],
+    render: ["input", "years", "report", "granularity"],
     "benchmark-prepare": ["dataset", "output-dir", "seed", "astro"],
     "benchmark-score": ["key", "predictions"],
     "attestation-prepare": ["manifest", "run"],
@@ -99,6 +100,10 @@ function run() {
       throw new InputError("INVALID_JSON", `${key} 文件不可读或不是合法 JSON`);
     }
   };
+  // 参数错误先于输入计算返回，避免被包装成可重放的 context 计算错误。
+  const granularity = opts.granularity ?? "year";
+  if (granularity !== "year" && granularity !== "month")
+    throw new InputError("INVALID_ARGUMENT", "granularity 只能是 year 或 month");
   if (command === "answer-check" && opts.text === "-" && opts.input === "-")
     throw new InputError("INVALID_ARGUMENT", "input和text不能同时从stdin读取；请至少为一侧提供文件");
   const emit = (x: unknown) =>
@@ -202,7 +207,7 @@ function run() {
     years.every((year) => Number.isInteger(year))
   )
     activeContextYears = years;
-  const chart = buildChart(input, years);
+  const chart = buildChart(input, years, granularity);
   if (chart.status === "needs-input") {
     emit(chart);
     process.exitCode = 2;
@@ -242,6 +247,19 @@ function run() {
   const report = read("report");
   // 既有报告按其绑定的 evidence 版本重算；新报告使用当前版本。
   const bound = evidenceForReport(chart, report, context);
+  const reportEvidenceId =
+    report && typeof report === "object" ? (report as { evidenceId?: unknown }).evidenceId : undefined;
+  if (bound.evidenceId !== reportEvidenceId) {
+    // 粒度参数不一致时给出直接原因，而不是笼统的 STALE_REPORT。
+    const other = granularity === "month" ? "year" : "month";
+    if (evidenceForReport(buildChart(input, years, other), report).evidenceId === reportEvidenceId)
+      throw new InputError(
+        "GRANULARITY_MISMATCH",
+        other === "month"
+          ? "该报告绑定月度 evidence，请加 --granularity month 重新校验"
+          : "该报告绑定年度 evidence，请去掉 --granularity month 重新校验",
+      );
+  }
   if (command === "render") process.stdout.write(renderReport(report, bound));
   else {
     validateReport(report, bound);

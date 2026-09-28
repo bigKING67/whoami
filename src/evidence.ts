@@ -1,10 +1,11 @@
-import { buildChart, digest, element, type Chart } from "./chart.js";
+import { buildChart, digest, element, type Chart, type Granularity } from "./chart.js";
 import { ziweiTransforms } from "./ziwei-transforms.js";
 import { wealthReview } from "./wealth-review.js";
 import { InputError } from "./input.js";
 import {
   completeBranchGroups,
   cycleRelations,
+  monthlyCycles,
   pairBranchRelations,
   type BranchRelation,
 } from "./cycle-relations.js";
@@ -37,6 +38,10 @@ export const isEvidenceSchema = (value: unknown): value is EvidenceSchema =>
 
 export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVIDENCE_SCHEMA) {
   const v2 = schema === "whoami.evidence.v2";
+  // 流月事实只在 v2 且显式请求月度粒度时加入；v1 为冻结口径，不接受月度粒度。
+  const monthly = "granularity" in chart && chart.granularity === "month";
+  if (monthly && !v2)
+    throw new InputError("INVALID_ARGUMENT", "月度粒度只能生成当前版本 evidence");
   if (chart.status === "needs-input")
     throw new InputError("MISSING_TIME", chart.questions[0]!);
   const facts: Fact[] = [],
@@ -261,16 +266,35 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
           "传统干合干冲、合冲刑害、伏吟反吟关系表；流年按 lunar-typescript 立春时刻，大运按起运范围对齐",
         )
       : null;
+    const monthlyRef = monthly
+      ? add(
+          id,
+          "bazi",
+          "monthlyCycles",
+          "八字流月（按节切分）及其与本命、流年、大运的干支关系",
+          monthlyCycles(c.bazi),
+          "lunar-typescript 节气时刻与月柱；关系表同 cycleRelations，不判化合成败或事件",
+        )
+      : null;
     const timingGuidance =
       "将具体运年与本命柱联系，区分触发线索、替代解释及现实条件；冲不等于灾、合不等于吉，不从关系表直接推断具体人生事件。";
     rules.push({
       id: `${id}.R-bazi-timing`,
       candidate: id,
       label: "本命与运年联读",
-      factRefs: [cycleRef, ...(cycleRelationRef ? [cycleRelationRef] : []), ...relationRefs, ...pillarRefs],
+      factRefs: [
+        cycleRef,
+        ...(cycleRelationRef ? [cycleRelationRef] : []),
+        ...(monthlyRef ? [monthlyRef] : []),
+        ...relationRefs,
+        ...pillarRefs,
+      ],
       guidance: v2
         ? timingGuidance +
-          "cycleRelations 只列组合是否出现：合是否化、冲是否成立、年内换运前后的差异及起运不确定时的分支仍须宿主论证。"
+          "cycleRelations 只列组合是否出现：合是否化、冲是否成立、年内换运前后的差异及起运不确定时的分支仍须宿主论证。" +
+          (monthlyRef
+            ? "monthlyCycles 的流月只能叠加在本命、大运与流年判断之上，按节气起止表达，不能改写为公历月或单独断事。"
+            : "")
         : timingGuidance,
       source: "references/analysis.md#八字",
     });
@@ -304,11 +328,20 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
       id, "ziwei", "transformations", "生年、大限、流年四化落宫（分层）",
       ziweiTransforms(c.ziwei), "iztro@2.6.1 运限输出 + whoami 星名/本命宫位联结",
     );
+    const ziweiMonthlyRef = monthly && c.ziwei.monthly
+      ? add(
+          id, "ziwei", "monthly", "紫微流月（农历月）宫职、四化与流月星",
+          c.ziwei.monthly, "iztro@2.6.1 流月运限；闰月按 iztro 前 15 日归上月、其后归下月",
+        )
+      : null;
     rules.push({
       id: `${id}.R-ziwei-transformations`, candidate: id,
       label: "四化分层与落宫核对",
-      factRefs: [transformRef, base, dynamic, ...palaceRefs],
-      guidance: "逐项核对四化来自生年、大限还是流年，以及星曜、本命落宫和已提供的流年宫职。大限年龄与年份均沿用虚岁/农历年口径，不当作生日或公历元旦切换。不能将大限命宫误作所有四化落宫；缺星、重名和未提供宫职保持未知，不用化忌直接断灾或化禄直接断财。",
+      factRefs: [transformRef, base, dynamic, ...(ziweiMonthlyRef ? [ziweiMonthlyRef] : []), ...palaceRefs],
+      guidance: "逐项核对四化来自生年、大限还是流年，以及星曜、本命落宫和已提供的流年宫职。大限年龄与年份均沿用虚岁/农历年口径，不当作生日或公历元旦切换。不能将大限命宫误作所有四化落宫；缺星、重名和未提供宫职保持未知，不用化忌直接断灾或化禄直接断财。" +
+        (ziweiMonthlyRef
+          ? "流月四化只叠加在生年、大限与流年层之上，按农历月表达；闰月两段须说明所用口径并保留另一派分支。"
+          : ""),
       source: "references/analysis.md#四化落宫复核",
     });
     for (const [topic, names] of Object.entries({
@@ -343,6 +376,7 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
     status: chart.status,
     input: chart.input,
     years: chart.years,
+    ...(monthly ? { granularity: "month" as const } : {}),
     warnings: chart.warnings,
     candidateIds: chart.candidates.map((c) => c.id),
     facts,
@@ -355,8 +389,13 @@ export function buildEvidence(chart: Chart, schema: EvidenceSchema = CURRENT_EVI
   };
 }
 export type Evidence = ReturnType<typeof buildEvidence>;
-export function contextFor(raw: unknown, years?: number[], schema?: EvidenceSchema) {
-  return buildEvidence(buildChart(raw, years), schema);
+export function contextFor(
+  raw: unknown,
+  years?: number[],
+  schema?: EvidenceSchema,
+  granularity: Granularity = "year",
+) {
+  return buildEvidence(buildChart(raw, years, granularity), schema);
 }
 /** 按报告已绑定的 evidenceId 选用对应版本重算；都不匹配时返回当前版本，由报告校验给出 STALE_REPORT。 */
 export function evidenceForReport(
@@ -369,10 +408,36 @@ export function evidenceForReport(
       ? (report as { evidenceId?: unknown }).evidenceId
       : undefined;
   if (bound === current.evidenceId) return current;
+  if ("granularity" in chart && chart.granularity === "month") return current;
   for (const schema of EVIDENCE_SCHEMAS) {
     if (schema === CURRENT_EVIDENCE_SCHEMA) continue;
     const older = buildEvidence(chart, schema);
     if (older.evidenceId === bound) return older;
   }
   return current;
+}
+
+/**
+ * 月度 evidence 中可被正文引用的流月标签，按所属年份（八字立春年、紫微农历年）列出允许的起止说明：
+ * 八字为“起节至止节”，紫微为农历月名（闰月含“闰六月上半”等分段名）。年度 evidence 返回 undefined。
+ */
+export function monthlyLabels(
+  evidence: Evidence,
+): Map<string, { year: number; range: string }[]> | undefined {
+  if (!("granularity" in evidence) || evidence.granularity !== "month") return undefined;
+  const labels = new Map<string, { year: number; range: string }[]>();
+  const add = (tag: string, year: number, range: string) => {
+    const list = labels.get(tag) ?? [];
+    if (!list.some((e) => e.year === year && e.range === range)) list.push({ year, range });
+    labels.set(tag, list);
+  };
+  for (const fact of evidence.facts) {
+    if (fact.id.endsWith(".bazi.monthlyCycles"))
+      for (const y of fact.value as ReturnType<typeof monthlyCycles>)
+        for (const m of y.months) add(`八字流月${m.pillar}`, y.year, `${m.startJie}至${m.endJie}`);
+    if (fact.id.endsWith(".ziwei.monthly"))
+      for (const m of fact.value as { year: number; stem: string; branch: string; label: string }[])
+        add(`紫微流月${m.stem}${m.branch}`, m.year, m.label);
+  }
+  return labels;
 }

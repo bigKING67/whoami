@@ -1,5 +1,5 @@
 import { object, InputError } from "./input.js";
-import type { Evidence } from "./evidence.js";
+import { monthlyLabels, type Evidence } from "./evidence.js";
 import { isDeepStrictEqual } from "node:util";
 import { wealthReviewFacts, wealthReviewSummary } from "./rule-review.js";
 import { ziweiLayerFacts, describeLayerEntry } from "./ziwei-layer-review.js";
@@ -14,6 +14,7 @@ import {
   requiredReasoningTopics,
 } from "./report-safety.js";
 import {
+  monthlyLabelMentions,
   referencedRelativeYears,
   validIsoDate,
   validateReportTemporalText,
@@ -383,6 +384,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
   const referenceYear = timeReference
     ? Number(timeReference.asOfDate.slice(0, 4))
     : null;
+  const monthly = monthlyLabels(evidence);
   const temporalText = (
     value: unknown,
     label: string,
@@ -393,7 +395,12 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
       label,
       evidence.years,
       referenceYear,
-      { role, asOfDate: timeReference?.asOfDate, birth: evidence.input },
+      {
+        role,
+        asOfDate: timeReference?.asOfDate,
+        birth: evidence.input,
+        monthlyLabels: monthly,
+      },
     );
   temporalText(r.title, "title", "title");
   temporalText(r.uncertainty, "uncertainty");
@@ -1102,7 +1109,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           return (
             fact.candidate === candidate &&
             fact.system === "bazi" &&
-            /\.bazi\.(?:cycles|cycleRelations)$/u.test(fact.id)
+            /\.bazi\.(?:cycles|cycleRelations|monthlyCycles)$/u.test(fact.id)
           );
         });
         if (
@@ -1117,6 +1124,23 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
             `${label} 引用了八字大运、流年或岁运关系事实，但未绑定该候选的 bazi-timing 论证`,
           );
       }
+    // 流月：引用流月事实须绑定该体系运限论证；正文写出流月标签须引用对应体系的流月事实。
+    for (const candidate of candidatesBySystem.ziwei)
+      if (
+        factRefs.includes(`${candidate}.ziwei.monthly`) &&
+        !links.some((l) => l.candidate === candidate && l.topic === "ziwei-timing")
+      )
+        throw new InputError(
+          "MISSING_REASONING_LINK",
+          `${label} 引用了紫微流月事实，但未绑定该候选的 ziwei-timing 论证`,
+        );
+    const mentionedSystems = new Set(monthlyLabelMentions(text).map((m) => m.system));
+    for (const [system, key] of [["八字", ".bazi.monthlyCycles"], ["紫微", ".ziwei.monthly"]] as const)
+      if (mentionedSystems.has(system) && !factRefs.some((id) => id.endsWith(key)))
+        throw new InputError(
+          "MISSING_TOPIC_EVIDENCE",
+          `${label} 写出了${system}流月，但未引用该体系的流月事实`,
+        );
     if (requiredZiweiTopic)
       for (const candidate of candidatesBySystem.ziwei)
         if (
@@ -1408,7 +1432,7 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
         wealth: hasPalace("财帛"),
         relationships: hasPalace("夫妻"),
         timing:
-          ziweiFacts.some((fact) => fact.id.endsWith(".ziwei.cycles")) &&
+          ziweiFacts.some((fact) => /\.ziwei\.(?:cycles|monthly)$/u.test(fact.id)) &&
           ziweiFacts.some((fact) =>
             fact.id.endsWith(".ziwei.transformations")
           ),
@@ -1424,11 +1448,12 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           return (
             fact.candidate === candidate &&
             fact.system === "bazi" &&
-            /\.bazi\.(?:cycles|cycleRelations)$/u.test(fact.id)
+            /\.bazi\.(?:cycles|cycleRelations|monthlyCycles)$/u.test(fact.id)
           );
         });
+        // 与八字侧一致：年度运限或流月事实都可作为紫微运限依据。
         const ziweiHasCycles = ziweiFacts.some((fact) =>
-          fact.id.endsWith(".ziwei.cycles")
+          /\.ziwei\.(?:cycles|monthly)$/u.test(fact.id)
         );
         const ziweiHasTransformations = ziweiFacts.some((fact) =>
           fact.id.endsWith(".ziwei.transformations")

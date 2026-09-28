@@ -42,6 +42,8 @@ test("确定性事业与人生事件断言被拦截，否定与条件表达放�
   ])
     assert.equal(findUnsafeReportClaim(text), null, text);
   assert.equal(findUnsafeReportClaim("不作他想地说注定离婚")?.category, "inevitable-relationship");
+  assert.equal(findUnsafeReportClaim("你注定要发财")?.category, "guaranteed-event");
+  assert.equal(findUnsafeReportClaim("他必然要破产")?.category, "guaranteed-event");
   assert.equal(findUnsafeReportClaim("这很不给力，注定结婚")?.category, "guaranteed-event");
 });
 

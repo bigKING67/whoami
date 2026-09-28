@@ -4,7 +4,7 @@
 
 每个 case 的 context 可以是 `whoami.evidence.v1`/`whoami.evidence.v2`、未知时辰的 `whoami.chart.v1` needs-input，或带显式年份的 `whoami.error.v1` context error。验收器会以当前引擎重放 input 与 years；错误产物的 code、message、command 或 years 不能伪造，能正常生成 context 的输入也不能冒充失败。错误绑定用于检查宿主是否忠实停下并补问，不把失败结果视为命盘。
 
-每个 case 的 input 与 context 还会由当前锁定引擎重新计算后做深度比较。可成功计算的完整输入须绑定 `whoami.evidence.v1` 或 `whoami.evidence.v2`，验收器按 context 记录的版本重算（v1 为冻结历史口径，新样例用 v2）；未知时辰可绑定 `whoami.chart.v1` 且状态必须为 `needs-input`；确定性失败须绑定当前引擎重放一致的 `whoami.error.v1`。A 输入配 B context、篡改事实、伪造错误、与当前引擎输出不一致的旧计算结果、把 needs-input 冒充 evidence 都会拒绝。当前合同不接纳任意错误文本或手写摘要作为 context。
+每个 case 的 input 与 context 还会由当前锁定引擎重新计算后做深度比较。可成功计算的完整输入须绑定 `whoami.evidence.v1` 或 `whoami.evidence.v2`，验收器按 context 记录的版本与 granularity 重算（v1 为冻结历史口径，新样例用 v2）；未知时辰可绑定 `whoami.chart.v1` 且状态必须为 `needs-input`；确定性失败须绑定当前引擎重放一致的 `whoami.error.v1`。A 输入配 B context、篡改事实、伪造错误、与当前引擎输出不一致的旧计算结果、把 needs-input 冒充 evidence 都会拒绝。当前合同不接纳任意错误文本或手写摘要作为 context。
 
 ```json
 {

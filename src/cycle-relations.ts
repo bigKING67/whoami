@@ -1,4 +1,4 @@
-import { Lunar } from "lunar-typescript";
+import { Lunar, Solar } from "lunar-typescript";
 import { Temporal } from "@js-temporal/polyfill";
 import type { Chart } from "./chart.js";
 
@@ -62,7 +62,9 @@ export function completeBranchGroups(
 }
 
 type CycleRelation = {
-  layer: "流年-本命" | "大运-本命" | "流年-大运" | "大运-本命组合" | "流年参与组合";
+  layer:
+    | "流年-本命" | "大运-本命" | "流年-大运" | "大运-本命组合" | "流年参与组合"
+    | "流月-本命" | "流月-流年" | "流月-大运" | "流月参与组合";
   scope: "stem" | "branch" | "pillar";
   kind: string;
   positions: string[];
@@ -102,11 +104,8 @@ const civil = (ms: number) =>
     .toZonedDateTimeISO("+08:00")
     .toString({ timeZoneName: "never" });
 
-/**
- * 逐个请求年份列出流年、该流年（立春至次年立春）内的大运，以及三层干支关系。
- * 只列传统关系表中的组合，不判断化合成败、吉凶或现实事件。
- */
-export function cycleRelations(bazi: Bazi) {
+/** 本命柱与大运时间窗；流年与流月共用同一套大运覆盖判断。 */
+function decadeTimeline(bazi: Bazi) {
   const natal: Located[] = bazi.pillars.map((p) => ({
     position: p.position,
     stem: p.stem,
@@ -125,24 +124,10 @@ export function cycleRelations(bazi: Bazi) {
   }));
   const lastIndex = cycles.decades.at(-1)!.index;
   const firstStart = bounds[0]!.from;
-  // 起运范围不确定且当年有非全年覆盖的大运时，换运是否落在当年取决于实际起运时刻，统一标 start-uncertain。
-  const decadeStatus = (
-    decades: { index: number; coverage: string }[],
-    start: number,
-    end: number,
-  ) => {
-    if (!decades.length) return start >= firstStart ? "after-last-decade" : "before-first-decade";
-    if (decades.length === 1 && decades[0]!.coverage === "whole-year") return "single";
-    if (cycles.uncertainty.status === "range") return "start-uncertain";
-    if (decades.length === 1 && decades[0]!.index === 1 && firstStart > start) return "first-decade-starts-within-year";
-    if (decades.length === 1 && decades[0]!.index === lastIndex && end > bounds.at(-1)!.to) return "last-decade-ends-within-year";
-    return "switches-within-year";
-  };
-  return cycles.yearly.map((y) => {
-    const start = lichun(y.year);
-    const end = lichun(y.year + 1);
-    const decades = bounds.flatMap(({ d, from, to }) => {
-      // 起运范围内任一时刻都覆盖整年才算 whole-year；只在部分起运时刻下覆盖记为 possible。
+  /** 窗口 [start, end) 内可能生效的大运；unit 只决定 coverage 的措辞（whole-year / whole-month）。 */
+  const active = (start: number, end: number, unit: "year" | "month") =>
+    bounds.flatMap(({ d, from, to }) => {
+      // 起运范围内任一时刻都覆盖整个窗口才算 whole-*；只在部分起运时刻下覆盖记为 possible。
       const always = from + maxShift <= start && to + minShift >= end;
       const sometimes = from + minShift < end && to + maxShift > start;
       const certainOverlap = from + maxShift < end && to + minShift > start;
@@ -150,15 +135,40 @@ export function cycleRelations(bazi: Bazi) {
       return [{
         index: d.index,
         pillar: d.pillar,
-        coverage: always ? "whole-year" : certainOverlap ? "part-year" : "possible-if-start-shifts",
+        coverage: always ? `whole-${unit}` : certainOverlap ? `part-${unit}` : "possible-if-start-shifts",
       }];
     });
+  // 起运范围不确定且窗口内有非完整覆盖的大运时，换运是否落在窗口内取决于实际起运时刻，统一标 start-uncertain。
+  const status = (
+    decades: { index: number; coverage: string }[],
+    start: number,
+    end: number,
+    unit: "year" | "month",
+  ) => {
+    if (!decades.length) return start >= firstStart ? "after-last-decade" : "before-first-decade";
+    if (decades.length === 1 && decades[0]!.coverage.startsWith("whole-")) return "single";
+    if (cycles.uncertainty.status === "range") return "start-uncertain";
+    if (decades.length === 1 && decades[0]!.index === 1 && firstStart > start) return `first-decade-starts-within-${unit}`;
+    if (decades.length === 1 && decades[0]!.index === lastIndex && end > bounds.at(-1)!.to) return `last-decade-ends-within-${unit}`;
+    return `switches-within-${unit}`;
+  };
+  const operators = (decades: { index: number; pillar: string }[]): Located[] =>
+    decades.map((d) => ({ position: `decade-${d.index}`, stem: d.pillar[0]!, branch: d.pillar[1]! }));
+  return { natal, active, status, operators };
+}
+
+/**
+ * 逐个请求年份列出流年、该流年（立春至次年立春）内的大运，以及三层干支关系。
+ * 只列传统关系表中的组合，不判断化合成败、吉凶或现实事件。
+ */
+export function cycleRelations(bazi: Bazi) {
+  const { natal, active, status, operators: toOperators } = decadeTimeline(bazi);
+  return bazi.cycles.yearly.map((y) => {
+    const start = lichun(y.year);
+    const end = lichun(y.year + 1);
+    const decades = active(start, end, "year");
     const yearly: Located = { position: "yearly", stem: y.pillar[0]!, branch: y.pillar[1]! };
-    const operators: Located[] = decades.map((d) => ({
-      position: `decade-${d.index}`,
-      stem: d.pillar[0]!,
-      branch: d.pillar[1]!,
-    }));
+    const operators = toOperators(decades);
     const relations: CycleRelation[] = [
       ...natal.flatMap((n) => pillarRelations(yearly, n, "流年-本命")),
       ...operators.flatMap((op) => natal.flatMap((n) => pillarRelations(op, n, "大运-本命"))),
@@ -186,9 +196,69 @@ export function cycleRelations(bazi: Bazi) {
       // 与大运 startCivil 一致使用 +08:00 民用时间表示立春时刻。
       lichunStart: civil(start),
       lichunEndExclusive: civil(end),
-      decadeStatus: decadeStatus(decades, start, end),
+      decadeStatus: status(decades, start, end, "year"),
       decades,
       relations,
     };
   });
+}
+
+/**
+ * 按节（立春、惊蛰……小寒）切分每个请求流年的 12 个流月，列出流月干支、窗口内大运，
+ * 以及流月与本命、流年、大运的成对关系。流月只是叠加在年、运之上的一层，不单独断事。
+ */
+export function monthlyCycles(bazi: Bazi) {
+  const { natal, active, status, operators: toOperators } = decadeTimeline(bazi);
+  return bazi.cycles.yearly.map((y) => {
+    const yearly: Located = { position: "yearly", stem: y.pillar[0]!, branch: y.pillar[1]! };
+    const months = [];
+    let start = lichun(y.year);
+    let startJie = "立春";
+    for (let i = 0; i < 12; i += 1) {
+      // 在节后 1 分钟取月柱与下一个节，避开节点本身的边界歧义。
+      const probe = Solar.fromJulianDay(
+        Solar.fromYmdHms(...civilParts(start)).getJulianDay() + 1 / 1440,
+      );
+      const lunar = probe.getLunar();
+      const next = lunar.getNextJie(false);
+      const nextJie = next.getSolar();
+      const end = Temporal.Instant.from(`${nextJie.toYmdHms().replace(" ", "T")}+08:00`).epochMilliseconds;
+      const pillar = lunar.getMonthInGanZhiExact();
+      const decades = active(start, end, "month");
+      const monthly: Located = { position: "monthly", stem: pillar[0]!, branch: pillar[1]! };
+      const operators = toOperators(decades);
+      const relations: CycleRelation[] = [
+        ...natal.flatMap((n) => pillarRelations(monthly, n, "流月-本命")),
+        ...pillarRelations(monthly, yearly, "流月-流年"),
+        ...operators.flatMap((op) => pillarRelations(monthly, op, "流月-大运")),
+      ];
+      // 须由流月补齐的三合、三刑、三会（本命、流年、大运已完整的组不重复列出）。
+      const seen = new Set<string>();
+      for (const combo of operators.length ? operators.map((op) => [yearly, op]) : [[yearly]])
+        for (const g of completeBranchGroups([...natal, ...combo, monthly], ["monthly"], [...BRANCH_GROUPS, ...SEASONAL_GROUPS])) {
+          const key = `${g.kind}:${g.positions.join(",")}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          relations.push({ layer: "流月参与组合", scope: "branch", kind: g.kind, positions: g.positions, value: g.branches });
+        }
+      months.push({
+        pillar,
+        startJie,
+        endJie: next.getName(),
+        start: civil(start),
+        endExclusive: civil(end),
+        decadeStatus: status(decades, start, end, "month"),
+        decades,
+        relations,
+      });
+      start = end;
+      startJie = next.getName();
+    }
+    return { year: y.year, yearPillar: y.pillar, months };
+  });
+}
+
+function civilParts(ms: number): [number, number, number, number, number, number] {
+  const z = Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO("+08:00");
+  return [z.year, z.month, z.day, z.hour, z.minute, z.second];
 }

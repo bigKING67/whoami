@@ -398,7 +398,11 @@ function verifyContextBinding(
     );
   let expected: unknown;
   try {
-    const chart = buildChart(rawInput, parsedContext.years as number[]);
+    const chart = buildChart(
+      rawInput,
+      parsedContext.years as number[],
+      parsedContext.granularity === "month" ? "month" : "year",
+    );
     if (errorContext)
       throw new InputError(
         "ACCEPTANCE_CONTEXT_MISMATCH",

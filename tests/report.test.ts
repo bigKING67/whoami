@@ -937,7 +937,7 @@ test("年度 evidence 拒绝半年季度月周日粒度，明确年度主题继�
     ).claims[0].text = text;
     assert.throws(
       () => validateReport(report, evidence),
-      /当前年度 evidence 不支持的细分时间.*退回明确年度主题/,
+      /当前 evidence 不支持的细分时间.*退回明确年度主题/,
       text,
     );
   }
@@ -1064,7 +1064,7 @@ test("绝对月日星期与命名历法点不能绕过年度 evidence", () => {
     ).claims[0].text = text;
     assert.throws(
       () => validateReport(report, evidence),
-      /当前年度 evidence 不支持的绝对细分时间.*退回明确年度主题/,
+      /当前 evidence 不支持的绝对细分时间.*退回明确年度主题/,
       text,
     );
   }
@@ -2323,4 +2323,24 @@ test("v6 正文引用岁运关系事实时必须绑定同候选 bazi-timing", ()
   claim.factRefs.push(`${candidate}.bazi.cycleRelations`);
   assert.throws(() => validateReport(r, e), (err: unknown) =>
     err instanceof InputError && err.code === "MISSING_REASONING_LINK" && err.message.includes("岁运关系"));
+});
+test("v6 正文写流月须引用对应流月事实，引用流月事实须绑定运限论证", () => {
+  const m = contextFor(input, [2026], undefined, "month");
+  const c = m.candidateIds[0]!;
+  const base = valid(m);
+  validateReport(base, m);
+  const pick = (r: ReturnType<typeof valid>) =>
+    r.sections
+      .flatMap((s: { claims: { text: string; factRefs: string[]; reasoningRefs: { topic: string }[] }[] }) => s.claims)
+      .find((cl: { factRefs: string[]; reasoningRefs: { topic: string }[] }) =>
+        cl.factRefs.some((id) => id.includes(".bazi.")) &&
+        !cl.reasoningRefs.some((l) => l.topic === "bazi-timing"))!;
+  const labelOnly = valid(m);
+  pick(labelOnly).text += "八字流月甲午另见条件。";
+  assert.throws(() => validateReport(labelOnly, m), (e: unknown) =>
+    e instanceof InputError && e.code === "MISSING_TOPIC_EVIDENCE" && e.message.includes("八字流月"));
+  const unlinked = valid(m);
+  pick(unlinked).factRefs.push(`${c}.bazi.monthlyCycles`);
+  assert.throws(() => validateReport(unlinked, m), (e: unknown) =>
+    e instanceof InputError && e.code === "MISSING_REASONING_LINK");
 });

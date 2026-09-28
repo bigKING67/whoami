@@ -16,6 +16,22 @@ const CALENDAR_QUALIFIED_RELATIVE_PATTERN =
   /(?:农历|阴历|夏历)(?:的)?(?:今年|本年|明年|后年|去年|前年)|(?:今年|本年|明年|后年|去年|前年)(?:按|以|的)?(?:农历|阴历|夏历)|(?:过完|过了|过)(?:春节|农历新年|立春)|(?:春节|农历新年|立春)(?:前|后|以前|以后|之前|之后)/u;
 const NAMED_CALENDAR_POINT_PATTERN =
   /(?:(?:今年|本年|明年|后年|去年|前年|(?:19|20)\d{2}\s*年?)(?:春节|农历新年|立春|雨水|惊蛰|春分|清明|谷雨|立夏|小满|芒种|夏至|小暑|大暑|立秋|处暑|白露|秋分|寒露|霜降|立冬|小雪|大雪|冬至|小寒|大寒))|(?:(?:春节|农历新年|立春|雨水|惊蛰|春分|清明|谷雨|立夏|小满|芒种|夏至|小暑|大暑|立秋|处暑|白露|秋分|寒露|霜降|立冬|小雪|大雪|冬至|小寒|大寒)(?:当天|当日|那天|之日|适合|会|能|是否|如何|怎么样|怎么))/u;
+const MONTHLY_LABEL_PATTERN =
+  /(?:((?:19|20)\d{2})\s*年?\s*(?:的)?\s*)?(八字|紫微)?\s*流月\s*([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])(?:\s*[（(]([^）)]*)[）)])?/gu;
+/** 文本中的流月标签：可选年份前缀、体系、干支与括号起止说明。报告绑定与时间门禁共用。 */
+export function monthlyLabelMentions(text: string) {
+  return [...text.matchAll(MONTHLY_LABEL_PATTERN)].map((m) => ({
+    source: m[0],
+    year: m[1] ? Number(m[1]) : null,
+    system: (m[2] ?? null) as "八字" | "紫微" | null,
+    pillar: m[3]!,
+    note: m[4],
+  }));
+}
+const JIE_NAMES = "立春|惊蛰|清明|立夏|芒种|小暑|立秋|白露|寒露|立冬|大雪|小寒";
+const JIE_RANGE_PATTERN = new RegExp(`(${JIE_NAMES})\\s*(?:至|到|—|–|-|~|～)\\s*(${JIE_NAMES})`, "u");
+const LUNAR_MONTH_PATTERN = /(闰)?(正|一|二|三|四|五|六|七|八|九|十一|十二|十|冬|腊)月(上半|下半)?/u;
+const LUNAR_MONTH_ALIASES: Record<string, string> = { 一: "正", 十一: "冬", 十二: "腊" };
 const SUBANNUAL_RELATIVE_TIME_PATTERN =
   /(?:(?:今年|本年|明年|后年|去年|前年)?(?:上半年|下半年|年初|年中|年底|年末))|(?:这个月|本月|当月|下个月|下月|上个月|上月|月初|月中|月底|月末)|(?:本周|这周|下周|上周|本星期|这星期|下星期|上星期)|(?:(?:这个|这|本|当|下个?|下一|上个?|上一)季度|第?[一二三四1-4]季度|Q[1-4])|(?:(?:未来|今后|接下来)?(?:\d+|[一二三四五六七八九十两]+)(?:个)?(?:天|周|星期|个月)(?:内|以内|之内|后|以后|前|以前))/iu;
 const ABSOLUTE_SUBANNUAL_TIME_PATTERN =
@@ -122,6 +138,8 @@ function numericPlainDateTime(
 }
 type TemporalTextContext = {
   role?: "prose" | "title" | "reality-source";
+  /** evidence 中实际存在的流月标签（如“八字流月壬午”“紫微流月癸未”）；年度 evidence 为 undefined。 */
+  monthlyLabels?: Map<string, { year: number; range: string }[]>;
   asOfDate?: string;
   birth?: { calendar: "solar" | "lunar"; date: string; leapMonth: boolean };
 };
@@ -638,11 +656,61 @@ export function validateReportTemporalText(
     if (!exactLunarBirth && !validGregorianDate(Number(match[1]), Number(match[2]), Number(match[3] ?? 1)))
       throw new InputError("INVALID_NUMERIC_DATE", `${label} 使用了无效公历日期“${match[0]}”`);
   }
+  // 月度只接受带体系与干支的流月标签，并须在 evidence 中真实存在；公历月、相对月仍按下方规则拒绝。
+  for (const month of monthlyLabelMentions(text)) {
+    if (!context?.monthlyLabels)
+      throw new InputError(
+        "UNSUPPORTED_TIME_GRANULARITY",
+        `${label} 使用了流月“${month.source}”，但当前 evidence 只到年度；请用 --granularity month 重新计算后再引用流月`,
+      );
+    if (!month.system)
+      throw new InputError(
+        "AMBIGUOUS_MONTH_SYSTEM",
+        `${label} 的“${month.source}”未写明体系；八字按节、紫微按农历月，边界不同，须写成“八字流月${month.pillar}”或“紫微流月${month.pillar}”`,
+      );
+    const tag = `${month.system}流月${month.pillar}`;
+    const all = context.monthlyLabels.get(tag) ?? [];
+    const entries = month.year === null ? all : all.filter((e) => e.year === month.year);
+    if (!entries.length)
+      throw new InputError(
+        "MONTH_NOT_IN_EVIDENCE",
+        `${label} 的“${month.year ?? ""}${month.year ? "年" : ""}${tag}”不在当前 evidence 的流月中；请核对体系、干支与请求年份`,
+      );
+    // 干支每五年重复；evidence 含多个同名流月时须写明年份。
+    if (month.year === null && new Set(entries.map((e) => e.year)).size > 1)
+      throw new InputError(
+        "AMBIGUOUS_MONTH_YEAR",
+        `${label} 的“${tag}”在 ${[...new Set(entries.map((e) => e.year))].join("、")} 年都有，请写明年份`,
+      );
+    // 标签后括号中的起止说明须与 evidence 一致：八字核对起止节，紫微核对农历月名。
+    if (month.note === undefined) continue;
+    let stated: string | null = null;
+    if (month.system === "八字") {
+      const jie = JIE_RANGE_PATTERN.exec(month.note);
+      if (jie) stated = `${jie[1]}至${jie[2]}`;
+    } else {
+      const lunar = LUNAR_MONTH_PATTERN.exec(month.note);
+      if (lunar)
+        stated = `${lunar[1] ?? ""}${LUNAR_MONTH_ALIASES[lunar[2]!] ?? lunar[2]}月${lunar[3] ?? ""}`;
+    }
+    const ranges = entries.map((e) => e.range);
+    if (
+      stated !== null &&
+      !ranges.some((range) => range === stated || (stated!.startsWith("闰") && range.startsWith(stated!)))
+    )
+      throw new InputError(
+        "MONTH_RANGE_MISMATCH",
+        `${label} 把“${tag}”写成“${stated}”，但当前 evidence 中为“${ranges.join("”或“")}”`,
+      );
+  }
+  const monthHint = context?.monthlyLabels
+    ? "；如需按月作答，改写为“八字流月<干支>”或“紫微流月<干支>”并写明其节气或农历起止"
+    : "，或用 --granularity month 接入流月证据后改写为体系流月";
   const subannual = SUBANNUAL_RELATIVE_TIME_PATTERN.exec(granularityText);
   if (subannual)
     throw new InputError(
       "UNSUPPORTED_TIME_GRANULARITY",
-      `${label} 使用了当前年度 evidence 不支持的细分时间“${subannual[0]}”；请退回明确年度主题，或先接入对应流月、流日或节气证据`,
+      `${label} 使用了当前 evidence 不支持的细分时间“${subannual[0]}”；请退回明确年度主题${monthHint}`,
     );
   for (const absoluteSubannual of granularityText.matchAll(
     ABSOLUTE_SUBANNUAL_TIME_PATTERN,
@@ -660,7 +728,7 @@ export function validateReportTemporalText(
       continue;
     throw new InputError(
       "UNSUPPORTED_TIME_GRANULARITY",
-      `${label} 使用了当前年度 evidence 不支持的绝对细分时间“${absoluteSubannual[0]}”；请退回明确年度主题，或先接入对应月、日与历法证据`,
+      `${label} 使用了当前 evidence 不支持的绝对细分时间“${absoluteSubannual[0]}”；公历月可能跨两个流月，请退回明确年度主题${monthHint}`,
     );
   }
   for (const numericDate of [

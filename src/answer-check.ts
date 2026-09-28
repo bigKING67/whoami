@@ -1,5 +1,5 @@
 import { InputError } from "./input.js";
-import type { Evidence } from "./evidence.js";
+import { monthlyLabels, type Evidence } from "./evidence.js";
 import {
   assertNoUnresolvedPremiseUpgrade,
   assertSafeReportText,
@@ -33,7 +33,7 @@ export function checkAnswer(text: string, evidence: Evidence, asOfDate?: string)
     "answer",
     evidence.years,
     asOfDate ? Number(asOfDate.slice(0, 4)) : null,
-    { role: "prose", asOfDate, birth: evidence.input },
+    { role: "prose", asOfDate, birth: evidence.input, monthlyLabels: monthlyLabels(evidence) },
   );
   // 多候选答复无法确定段落属于哪张盘，宫位集合不做自动核对，并在结果中明示。
   const scope = scopeForText(ziweiScopes(evidence));

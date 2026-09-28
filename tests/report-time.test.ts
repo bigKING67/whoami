@@ -28,8 +28,9 @@ function temporalErrorCode(
   return null;
 }
 
-test("报告时间模块只公开报告层实际使用的三个接口", () => {
+test("报告时间模块只公开报告层实际使用的四个接口", () => {
   assert.deepEqual(Object.keys(reportTime).sort(), [
+    "monthlyLabelMentions",
     "referencedRelativeYears",
     "validIsoDate",
     "validateReportTemporalText",
