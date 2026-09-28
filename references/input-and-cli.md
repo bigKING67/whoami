@@ -33,7 +33,10 @@ node dist/cli.js rule-review --input examples/birth.json --years 2024,2025,2026,
 node dist/cli.js report-template --input examples/birth.json --years 2024,2025,2026,2027,2028 --mode combined
 node dist/cli.js report-check --input examples/birth.json --report /path/to/report.json --years 2024,2025,2026,2027,2028
 node dist/cli.js render --input examples/birth.json --report /path/to/report.json --years 2024,2025,2026,2027,2028
+node dist/cli.js answer-check --input examples/birth.json --years 2026 --as-of 2026-09-28 --text -
 ```
+
+`answer-check` 用于快速档纯文本答复：`--text` 为文本文件或 `-`（stdin，避免落盘真人答复）；`--as-of` 是按用户报告时区冻结的 YYYY-MM-DD，答复含相对年份时必须提供。它复用报告的高风险措辞、未决前提升级与时间规则，并在单候选时核对流年主题宫位集合；成功输出 `status: valid` 与 chartId/evidenceId，失败按下述错误契约退出 1。它不读取报告、不证明解释语义，也不替代完整报告的 `report-check`。
 
 `report-template` 当前输出 v6，`timeReference.asOfDate` 与 `timeReference.timeZone` 留空等待宿主填写。填写报告实际采用的本地公历日期与 IANA 时区后再运行 `report-check`；不能把模板空值直接当成有效报告，也不能用系统读取时刻替换已经冻结的报告基准。
 

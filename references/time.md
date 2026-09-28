@@ -58,7 +58,7 @@ v6 报告以 `timeReference: {"asOfDate":"YYYY-MM-DD","timeZone":"IANA 时区"}`
 
 “近期、不久、很快、过阵子、什么时候、短期内、未来一段时间”等表达没有可复算年份或起止范围，返回 `AMBIGUOUS_TIME_HORIZON`。宿主须先让用户选择明确的 YYYY 年度主题或明确日期范围；不能自行换算成几周、几个月、某个季度或最佳窗口。若用户选择的范围细于当前年度 evidence，仍须停止，直至对应粒度 evidence 已经计算并进入报告合同。
 
-“未来三年、三年内、接下来五年、这几年、近几年、长期”等多年范围没有唯一首尾年份或是否包含当前年的约定，返回 `AMBIGUOUS_YEAR_RANGE`。宿主须先改写为升序的 `YYYY—YYYY 年度`闭区间。明确闭区间会逐年检查；任一年不在同一 input 的 `evidence.years` 时返回 `TIME_RANGE_OUT_OF_SCOPE`，必须补算后再生成报告。含紫微事实的正文还须以同候选 `ziwei-timing` 和 `timingChain.years` 覆盖区间全部年份。大限既有起止标签不是用户选择的年度分析范围，不因本条要求为整个大限补算逐年 evidence。
+“未来三年、三年内、接下来五年、这几年、近几年、长期”等多年范围没有唯一首尾年份或是否包含当前年的约定，返回 `AMBIGUOUS_YEAR_RANGE`。宿主须先改写为升序的 `YYYY—YYYY 年度`闭区间。明确闭区间会逐年检查；任一年不在同一 input 的 `evidence.years` 时返回 `TIME_RANGE_OUT_OF_SCOPE`，必须补算后再生成报告。含紫微事实的正文还须以同候选 `ziwei-timing` 和 `timingChain.years` 覆盖区间全部年份。大限既有起止标签不是用户选择的年度分析范围，不因本条要求为整个大限补算逐年 evidence；这类标签写成不带“年/年度”的“（2022—2031）”，带“年/年度”即按分析区间逐年检查。
 
 ## 资料复述与限制性说明的窄例外
 

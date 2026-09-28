@@ -21,7 +21,7 @@ node dist/cli.js context --input examples/birth.json --years 2024,2025,2026,2027
 
 1. 收集历法、日期、时间或时间范围、性别、地点、经度和历史 IANA 时区。未知时辰保持 `null`，不能填中午。
 2. 使用同一输入和年份运行 `chart` 与 `context`。出现多个候选时逐一比较，不替用户选择出生时辰。
-3. 分别完成八字与紫微分析，再作范围一致的对照；报告通过 `report-check` 后用 `render` 生成 Markdown。
+3. 具体问题走快速档：基于 context 直接作答，答复经 `answer-check` 检查后交付。要求完整报告时走完整档：分别完成八字与紫微分析，再作范围一致的对照；报告通过 `report-check` 后用 `render` 生成 Markdown。
 4. 用户更正出生资料时重新计算，并用 `compare` 区分改变与未变的事实；旧报告不能只替换标识后继续使用。
 
 需要查看已实现的财格规则线索，可运行：

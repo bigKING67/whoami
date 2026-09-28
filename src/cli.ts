@@ -14,6 +14,7 @@ import { renderRuleReview } from "./rule-review.js";
 import { compareBirths } from "./compare.js";
 import { checkAcceptanceManifest } from "./acceptance.js";
 import { contextErrorOutcome } from "./outcome.js";
+import { checkAnswer } from "./answer-check.js";
 import {
   finalizeRuntimeAttestation,
   prepareRuntimeAttestation,
@@ -27,6 +28,7 @@ const HELP = `whoami（本地核心，不调用模型 API）
   compare --before <birth.json> --after <birth.json> [--years ...] [--before-candidate <ID>] [--after-candidate <ID>]
   report-template --input <birth.json> [--mode combined|bazi|ziwei] [--years ...]
   report-check --input <birth.json> --report <report.json> [--years ...]
+  answer-check --input <birth.json> --text <answer.md> [--years ...] [--as-of YYYY-MM-DD]  （快速档纯文本答复门禁）
   render --input <birth.json> --report <report.json> [--years ...]
   benchmark-prepare --dataset <data.json> --output-dir <private-dir> [--seed whoami-v1] [--astro <fortune_api_results.json>]
   benchmark-score --key <answers.json> --predictions <predictions.json>
@@ -56,6 +58,7 @@ function run() {
     compare: ["before", "after", "years", "before-candidate", "after-candidate"],
     "report-template": ["input", "years", "mode"],
     "report-check": ["input", "years", "report"],
+    "answer-check": ["input", "years", "text", "as-of"],
     render: ["input", "years", "report"],
     "benchmark-prepare": ["dataset", "output-dir", "seed", "astro"],
     "benchmark-score": ["key", "predictions"],
@@ -96,6 +99,8 @@ function run() {
       throw new InputError("INVALID_JSON", `${key} 文件不可读或不是合法 JSON`);
     }
   };
+  if (command === "answer-check" && opts.text === "-" && opts.input === "-")
+    throw new InputError("INVALID_ARGUMENT", "input和text不能同时从stdin读取；请至少为一侧提供文件");
   const emit = (x: unknown) =>
     process.stdout.write(JSON.stringify(x, null, 2) + "\n");
   if (command === "attestation-prepare") {
@@ -221,6 +226,17 @@ function run() {
     if (!["bazi", "ziwei", "combined"].includes(mode))
       throw new InputError("INVALID_ARGUMENT", "mode 无效");
     emit(reportTemplate(context, mode as Report["mode"]));
+    return;
+  }
+  if (command === "answer-check") {
+    const path = required("text");
+    let text: string;
+    try {
+      text = readFileSync(path === "-" ? 0 : path, "utf8");
+    } catch {
+      throw new InputError("INVALID_ARGUMENT", "text 文件不可读");
+    }
+    emit(checkAnswer(text, context, opts["as-of"]));
     return;
   }
   const report = read("report");

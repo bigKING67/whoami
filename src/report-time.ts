@@ -735,7 +735,7 @@ export function validateReportTemporalText(
     if (missing.length)
       throw new InputError(
         "TIME_RANGE_OUT_OF_SCOPE",
-        `${label} 的明确年度区间缺少 ${missing.join("、")} evidence；须按同一 input 补算完整年份后再生成报告`,
+        `${label} 的明确年度区间缺少 ${missing.join("、")} evidence；须按同一 input 补算完整年份后再生成报告。若这只是大限或大运的起止标签，写成不带“年/年度”的（YYYY—YYYY）`,
       );
   }
   return text;

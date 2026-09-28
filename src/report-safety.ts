@@ -4,7 +4,8 @@ export type UnsafeReportCategory =
   | "death-prediction"
   | "medical-diagnosis"
   | "guaranteed-finance"
-  | "inevitable-relationship";
+  | "inevitable-relationship"
+  | "guaranteed-event";
 
 type SafetyRule = {
   category: UnsafeReportCategory;
@@ -37,12 +38,19 @@ const RULES: readonly SafetyRule[] = [
     pattern:
       /(?:注定|必然|必定|一定(?:会)?|肯定(?:会)?)(?:离婚|婚变|分手|出轨)|婚姻必破|必二婚/gu,
   },
+  {
+    category: "guaranteed-event",
+    label: "确定性事业或人生事件",
+    pattern:
+      // “一定/肯定/保证”须带“会/能”或直接接事件，避免误伤“一定的加薪空间”“一定要留意被裁风险”。
+      /(?:注定|必然|必定|(?:一定|肯定|保证)(?:会|能))(?:(?!要|需|应|防|避|留意|注意)[^，。！？；\n]){0,4}(?:升职|加薪|晋升|升迁|发财|暴富|中奖|结婚|复合|怀孕|跳槽成功|考上|录取|上岸|破产|失业|被裁)|(?:一定|肯定|保证)(?:升职|加薪|晋升|升迁|发财|暴富|中奖|结婚|复合|怀孕|跳槽成功|考上|录取|上岸|破产|失业|被裁)|(?:升职|加薪|晋升|结婚|复合|发财)(?:已成定局|板上钉钉)/gu,
+  },
 ];
 
 const CLAUSE_BOUNDARY = /[，。！？；\n]/u;
 const CONTRAST_BOUNDARY = /(?:但是|但|然而|不过|可是)/u;
 const NEGATION_CONTEXT =
-  /(?:(?:尚)?不足以|不支持|不能|不得|不可|不应|不要|不宜|不依赖|不把|没有|未(?:自动)?(?:判定|确定|裁定)|切勿|拒绝|避免|禁止|并非|不是|不代表|不等于|无法|不会)(?:[^，。！？；\n]{0,24})$|不$/u;
+  /(?:(?:尚)?不足以|不支持|不能|不得|不可|不应|不要|不宜|不依赖|不把|没有|未(?:自动)?(?:判定|确定|裁定)|切勿|拒绝|避免|禁止|并非|不是|不代表|不等于|不等同(?:于)?|不意味着|不给(?!力)|不构成|无法|不会)(?:[^，。！？；\n]{0,24})$|不$/u;
 const POST_NEGATION = /^(?:并不成立|不是事实|并不存在|不可能|不可成立)/u;
 
 function isNegated(text: string, index: number, length: number) {
