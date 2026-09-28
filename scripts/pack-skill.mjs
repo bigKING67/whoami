@@ -2,8 +2,8 @@
 // 导出只含运行所需文件的 skill 分发目录；验收样例、质量记录、测试与研究扫描件留在仓库。
 // 用法：npm run pack:skill -- <目标目录>（目标须不存在，不覆盖）。
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,12 +12,18 @@ if (!target) {
   console.error("用法：npm run pack:skill -- <目标目录>");
   process.exit(2);
 }
-const out = resolve(target);
+// npm run 会把 cwd 切到仓库根；相对路径按用户执行命令时的目录解析。
+const out = resolve(process.env.INIT_CWD ?? process.cwd(), target);
 if (existsSync(out)) {
   console.error(`目标已存在，不覆盖：${out}`);
   process.exit(1);
 }
-// 先按当前 src 重新构建，避免把过期的 dist 打进包里。
+if (out === root || out.startsWith(`${root}${sep}`)) {
+  console.error(`目标不能位于仓库内：${out}`);
+  process.exit(1);
+}
+// 清空 dist 后按当前 src 重建，避免过期或已删除模块的产物进入分发包。
+rmSync(join(root, "dist"), { recursive: true, force: true });
 execSync("npm run build", { cwd: root, stdio: "inherit" });
 
 const include = [

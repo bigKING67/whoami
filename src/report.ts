@@ -1138,7 +1138,12 @@ export function validateReport(raw: unknown, evidence: Evidence): Report {
           `${label} 引用了紫微流月事实，但未绑定该候选的 ziwei-timing 论证`,
         );
     const mentionedSystems = new Set(
-      monthlyLabelMentions(text, { role: "prose", birth: evidence.input }, label).map((m) => m.system),
+      // 与 temporalText 使用同一份上下文，保证屏蔽口径一致。
+      monthlyLabelMentions(
+        text,
+        { role: "prose", asOfDate: timeReference?.asOfDate, birth: evidence.input, monthlyLabels: monthly },
+        label,
+      ).map((m) => m.system),
     );
     for (const [system, key] of [["八字", ".bazi.monthlyCycles"], ["紫微", ".ziwei.monthly"]] as const)
       if (mentionedSystems.has(system) && !factRefs.some((id) => id.endsWith(key)))
